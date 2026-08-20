@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 教学收敛：图表路径二选一（方案 B）
+
+- **模型面前只保留 `flint` + `echarts` 两条图表路径**：`chart`（上游自绘 bars/line/donut）从模型主动教学里降级——`SKILL.md` 词汇表、语法段与内容映射表、`GENUI_SECTION_TEXT` 全部移除 `chart` 条目；数据对比/趋势/占比的映射改为 `flint`、`table`。
+- **决策规则明确写入教学**：数据可视化默认 `flint`；`echarts` 仅用于 flint 目录没有的图（桑基/树图/日历热力/关系图…）或需要精细定制样式；`plot` 只画数学函数。
+- **渲染器与守卫不变**：`chart` 节点继续渲染（兼容上游与旧会话日志），只是不再主动教模型输出它。
+
 ### Fork: dsh-genui → dsh-genui-charts
 
 本地 fork（未发布）：在 `omdsh-dev/dsh-genui` 上融合 **ECharts + Flint** 两个图表节点，白名单新增 `echarts` / `flint`。

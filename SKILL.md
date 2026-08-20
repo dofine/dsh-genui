@@ -15,7 +15,7 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 
 布局：`text` `row` `col` `grid` `card` `divider` `spacer`
 展示：`stat` `badge` `progress` `list` `table` `keyvalue` `avatar` `audio` `video` `timeline` `file-tree` `breadcrumb` `diff` `json` `code` `callout` `steps`
-图表：`chart`（bars/line/donut，可多序列）`plot`（数学函数图）`echarts`（原生 ECharts option）`flint`（Flint 语义规格 → ECharts）
+图表：`flint`（语义规格 → ECharts，默认）`echarts`（原生 ECharts option，逃生舱）`plot`（数学函数图）
 交互：`button` `input` `select` `checkbox` `radio` `switch` `textarea` `tabs` `accordion` `copy`
 高级：`mermaid`（流程图/时序/甘特等）`scene3d`（3D WebGL）`quiz`（点选判题 + 解析 + 重试）
 
@@ -46,10 +46,12 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 - steps: `{"type":"steps","current":n,"steps":[{"title":"...","desc":"..."}]}`
 
 ### 图表
-- chart: `{"type":"chart","kind":"bars|line|donut","data":[{"label":"...","value":n,"color":"#hex?"}],"series":[...]?}` — bars 默认；line 趋势；donut 占比；series 字段 = 分组柱状图；负值数据：柱高为 0 但数值标注照显、donut 负值记 0 弧长（line 正常画负区间）
-- plot: `{"type":"plot","series":[{"expr":"a*sin(b*x)","label":"...","color":"#hex?","params":[{"name":"a","value":1,"min":0,"max":5,"animateTo":3,"durationMs":4000,"loop":true},{"name":"b","value":1,"min":0.5,"max":5}]}],"xMin":-6.28,"xMax":6.28,"title":"..."}` — SVG 函数图；**series 可带 `"kind":"line|area|scatter"`**（缺省 line；area 填色到基线；scatter 散点）；**params 渲染成实时滑块**（拖动即时重绘，**y 轴锁定**=只变曲线不变数轴）；**animateTo 参数会显示播放按钮**（自动动画演示）；SVG 可拖拽平移、滚轮缩放；表达式支持 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x（其他字母=参数）
-- echarts: `{"type":"echarts","option":{...},"height":n?}` — 直接内嵌原生 ECharts option（折线/柱状/饼/散点/热力/桑基等任意 ECharts 图），浏览器用 echarts 引擎渲染，支持悬浮 tooltip、缩放等交互。**只写声明式 JSON**：`formatter`/`renderItem` 等字段必须是字符串模板或纯数据，**绝不能写 JS 函数**（守卫会丢弃函数字段）；高度 `height` 上限 420px。
+
+**决策规则**：数据可视化（对比/趋势/占比/分布…）**默认用 `flint`**；`echarts` 只用于 flint 目录没有的图（桑基/树图/日历热力/关系图…）或需要精细定制样式时；`plot` 只画数学函数曲线。
+
 - flint: `{"type":"flint","input":{"data":{"values":[...]},"semantic_types":{...},"chart_spec":{"chartType":"...","encodings":{...}}},"height":n?}` — 用 Flint 的语义规格画图：写 `chartType`（如 `"Bar Chart"`/`"Line Chart"`/`"Pie Chart"`/`"Scatter Plot"`/`"Heatmap"`…）+ `encodings`（通道→字段）+ `semantic_types`（字段→语义类型，如 Amount/Percentage/Date/Category/Quantity）+ 绑定 `data.values`（小表内联，大表需先转换）。前端用 `assembleECharts` 编译成 ECharts 渲染。语义类型决定格式化（货币/百分比/颜色/零基线）。**不要内联大表**；聚合/筛选/透视先上数据工具转换好再绑定。
+- echarts: `{"type":"echarts","option":{...},"height":n?}` — 直接内嵌原生 ECharts option（折线/柱状/饼/散点/热力/桑基等任意 ECharts 图），浏览器用 echarts 引擎渲染，支持悬浮 tooltip、缩放等交互。**只写声明式 JSON**：`formatter`/`renderItem` 等字段必须是字符串模板或纯数据，**绝不能写 JS 函数**（守卫会丢弃函数字段）；高度 `height` 上限 420px。
+- plot: `{"type":"plot","series":[{"expr":"a*sin(b*x)","label":"...","color":"#hex?","params":[{"name":"a","value":1,"min":0,"max":5,"animateTo":3,"durationMs":4000,"loop":true},{"name":"b","value":1,"min":0.5,"max":5}]}],"xMin":-6.28,"xMax":6.28,"title":"..."}` — SVG 函数图；**series 可带 `"kind":"line|area|scatter"`**（缺省 line；area 填色到基线；scatter 散点）；**params 渲染成实时滑块**（拖动即时重绘，**y 轴锁定**=只变曲线不变数轴）；**animateTo 参数会显示播放按钮**（自动动画演示）；SVG 可拖拽平移、滚轮缩放；表达式支持 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x（其他字母=参数）
 
 ### 交互
 **本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。**交互组件必须带 action：不带 action 的按钮渲染为禁用态，用户点不了；带 action 的按钮点击后有「已触发」本地反馈。**
@@ -85,7 +87,7 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 |---|---|
 | 关键结论 / 要点罗列（≥2 条） | `list`、`keyvalue`、`callout` |
 | 重点强调 / 警告 / 注意事项 | `callout`（info/success/warning/error）、`badge`、`stat` |
-| 数据对比 / 趋势 / 占比 | `chart`（bars/line/donut）、`table` |
+| 数据对比 / 趋势 / 占比 | `flint`、`table` |
 | 关键指标数字 / 进度状态 | `stat`、`progress`、`badge` |
 | 流程 / 步骤 / 阶段 / 时间线 | `steps`、`timeline`、`mermaid`（flowchart/sequence/gantt） |
 | 目录 / 文件结构 / 层级关系 | `file-tree`、`mermaid`、`accordion` |
@@ -110,6 +112,6 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 6. **场景判断**：先查上面的映射表 —— 内容类型命中就上对应组件；只有纯文字问答、一句话能说清时才不用
 7. **图表范围**：`plot` 给合理 xMin/xMax（如 -3.14 到 3.14）；3D 场景 mesh 少而精
 8. **规格要紧凑**：整棵组件树 ≤200 节点、≤8 层嵌套（超出部分会被渲染器裁掉），避免巨型 spec
-9. **一个主题选一个主组件**：命中映射表后选**一种**组件承载，同一信息不要用两种组件重复表达（同一批数据又画 bars 又画 donut = 冗余）
+9. **一个主题选一个主组件**：命中映射表后选**一种**组件承载，同一信息不要用两种组件重复表达（同一批数据又画柱状图又画饼图 = 冗余）
 10. **数量纪律**：一条回答 3–8 个组件为宜，宁缺毋滥。反例：该用 `table` 对比时写三段 `text`；一个 `stat` 能说清的事套 `card`+`grid`；与内容无关的 `scene3d` 炫技——3D 只在内容本身就是几何/空间时才用
 11. **先验后发（复杂 UI）**：发出 ```dsh-ui 围栏前，若 spec ≥3 个组件或含 `table`（长表格最易括号错位），先调用 `validate_dsh_ui` 工具（参数 `spec` 传围栏内的 JSON 文本）验证；返回 ❌ 就按错误信息（位置、括号计数、常见原因）修正后重新验证，✅ 再发出；**若 ❌ 回复里附了「已自动修复」的 JSON，直接照抄那份发出，无需再验证**；简单 UI（≤2 个组件）不必验证，渲染器会自动修复大部分标点/括号错误

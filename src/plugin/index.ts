@@ -98,7 +98,7 @@ The spec is a white-listed component tree rendered inline where the fence sits. 
 
 - 布局: text · row · col · grid · card · divider · spacer
 - 展示: badge · stat · progress · list · table · keyvalue · avatar · audio · video · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy
-- 图表: chart (bars|line|donut) · plot (函数图) · echarts (原生 ECharts option) · flint (Flint ChartAssemblyInput → ECharts)
+- 图表: flint (Flint ChartAssemblyInput → ECharts, 数据图默认) · echarts (原生 ECharts option, flint 目录外或需精细定制时才用) · plot (函数图)
 - 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
 - 高级: mermaid (flowchart/sequence/class/gantt/pie/er/state/journey) · scene3d (3D WebGL)
 
