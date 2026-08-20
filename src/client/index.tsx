@@ -18,7 +18,7 @@
  * streams, every FINISHED component appears the moment its JSON object
  * closes, so the UI assembles top-down before the fence (or reply) completes.
  * A body with no finished component yet falls back to a plain code block.
- * @module @omdsh-dev/dsh-genui/client
+ * @module dsh-genui-charts/client
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -40,13 +40,13 @@ type HostFenceExt = {
   registerFenceRenderer?: (lang: string, renderer: (raw: string, key: Key, context?: GenuiFenceContext) => ReactNode) => () => void
 }
 
-/** Add low-priority prefetch links for the lazy engine assets (mermaid/three).
- * Browser-dependent: some engines ignore `<link rel=prefetch>`; harmless
- * either way — the on-demand loader still covers a cache miss. Exported for
- * tests. */
+/** Add low-priority prefetch links for the lazy engine assets
+ * (mermaid/three/echarts). Browser-dependent: some engines ignore
+ * `<link rel=prefetch>`; harmless either way — the on-demand loader still
+ * covers a cache miss. Exported for tests. */
 export function prefetchGenuiAssets(): void {
   if (typeof document === 'undefined') return
-  for (const file of ['mermaid.js', 'three.js']) {
+  for (const file of ['mermaid.js', 'three.js', 'echarts.js']) {
     if (document.head.querySelector(`link[rel="prefetch"][href="${assetUrl(file)}"]`) !== null) continue
     const link = document.createElement('link')
     link.rel = 'prefetch'

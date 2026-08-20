@@ -53,6 +53,8 @@ export type GenuiNode =
   | GenuiFileTree
   | GenuiBreadcrumb
   | GenuiQuiz
+  | GenuiEcharts
+  | GenuiFlint
 
 export interface GenuiSpec {
   /** Short title shown as the card banner. */
@@ -256,6 +258,57 @@ export interface GenuiChart {
   data: GenuiChartDatum[]
   /** Multi-series grouped bars: one series of data per entry. */
   series?: Array<{ label: string; color?: string; data: GenuiChartDatum[] }>
+}
+
+/**
+ * A raw ECharts option authored directly by the model (declarative JSON only).
+ * Rendered by the echarts engine; the guard deep-sanitizes it — functions and
+ * executable option fields never survive repair, so no script path exists.
+ */
+export interface GenuiEcharts {
+  type: 'echarts'
+  /** The ECharts `option` object; must be plain JSON data (no functions). */
+  option: Record<string, unknown>
+  /** Chart height in px; the block size caps it. */
+  height?: number
+}
+
+/**
+ * A Flint `ChartAssemblyInput` authored by the model and compiled client-side
+ * to an ECharts option via `assembleECharts`. The narrow field contract
+ * (chartType + encodings + semantic_types + bound data) is far safer than raw
+ * options while still carrying Flint's semantic formatting.
+ */
+export interface GenuiFlint {
+  type: 'flint'
+  /** The Flint chart assembly input; data is bound inline as values/url. */
+  input: GenuiFlintInput
+  /** Chart height in px; the block size caps it. */
+  height?: number
+}
+
+/** One Flint encoding: channel → field binding plus optional overrides. */
+export interface GenuiFlintEncoding {
+  field: string
+  type?: 'quantitative' | 'nominal' | 'ordinal' | 'temporal'
+  aggregate?: 'count' | 'sum' | 'average' | 'mean'
+  sortOrder?: 'ascending' | 'descending'
+  sortBy?: string
+  scheme?: string
+}
+
+/** A Flint `ChartAssemblyInput`: the model-authored chart spec plus bound data. */
+export interface GenuiFlintInput {
+  data: { values: unknown[] } | { url: string }
+  semantic_types?: Record<string, string>
+  chart_spec: {
+    chartType: string
+    encodings: Record<string, GenuiFlintEncoding | Partial<GenuiFlintEncoding>>
+    baseSize?: { width: number; height: number }
+    canvasSize?: { width: number; height: number }
+    chartProperties?: Record<string, unknown>
+  }
+  options?: Record<string, unknown>
 }
 
 export interface GenuiTab {

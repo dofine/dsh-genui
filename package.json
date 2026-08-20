@@ -1,6 +1,6 @@
 {
-  "name": "@omdsh-dev/dsh-genui",
-  "description": "GenUI for DeepSeek Harness: interactive UI components rendered inline in assistant replies via the ```dsh-ui fence — layout, charts, plots, forms, quizzes, mermaid, 3D scenes, and an action event loop back to the model. Ships the fence-teaching host plugin, the browser renderer (client half), and the genui skill.",
+  "name": "dsh-genui-charts",
+  "description": "GenUI for DeepSeek Harness, forked from dsh-genui with ECharts + Flint chart nodes added to the dsh-ui fence: render interactive data charts (native ECharts option or declarative Flint ChartAssemblyInput) inline in assistant replies.",
   "version": "0.8.7",
   "type": "module",
   "main": "lib/index.js",
@@ -26,6 +26,8 @@
     "lib/client.js",
     "lib/assets/mermaid.js",
     "lib/assets/three.js",
+    "lib/assets/echarts.js",
+    "lib/assets/flint.js",
     "lib/types/plugin/index.d.ts",
     "lib/types/plugin/invariant.d.ts",
     "lib/types/client/index.d.ts",
@@ -44,20 +46,15 @@
     "access": "public"
   },
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/omdsh-dev/dsh-genui.git"
-  },
-  "homepage": "https://github.com/omdsh-dev/dsh-genui",
-  "bugs": {
-    "url": "https://github.com/omdsh-dev/dsh-genui/issues"
-  },
   "keywords": [
     "dsh",
     "deepseek-harness",
     "generative-ui",
     "plugin",
-    "ui"
+    "ui",
+    "echarts",
+    "flint",
+    "chart"
   ],
   "dependencies": {
     "react": "^18.3.1"
@@ -94,7 +91,9 @@
     "yaml": "^2.4.2",
     "mermaid": "11.16.0",
     "three": "^0.180.0",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "echarts": "^5.5.0",
+    "flint-chart": "^0.5.1"
   },
   "scripts": {
     "build": "rm -rf lib && tsc -p tsconfig.json && tsdown",

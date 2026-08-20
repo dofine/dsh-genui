@@ -1,13 +1,13 @@
 #!/bin/sh
-# dsh-genui 一键安装脚本（公开仓库：omdsh-dev/dsh-genui，git URL 安装无需登录）
+# dsh-genui-charts 一键安装脚本（本地 fork：从当前 checkout link 安装，无需网络/登录）
 #
 # 用法:
 #   ./scripts/install.sh            # 装进默认 web profile
 #   ./scripts/install.sh tui        # 装进自定义 profile
 #
-# 做什么: 检查三个前置（dsh / pnpm / 仓库可访问）→ 用 git URL 方式把插件
-# 装进 profile → 同步 genui skill（带文件安全边界）→ 提示重启验证。
-# 与手装唯一区别是多了前置自检，安装命令本身和 README 一致。
+# 做什么: 检查两个前置（dsh / pnpm）→ 用 link: 方式把本 checkout 的插件装进
+# profile → 同步 genui skill（带文件安全边界）→ 提示重启验证。
+# 注意: link: 安装不装依赖、也不构建，请先 `pnpm install && pnpm build`。
 
 set -eu
 
@@ -23,8 +23,8 @@ if [ "$fail_early" = 1 ]; then
   exit 1
 fi
 
-REPO_URL="git+https://github.com/omdsh-dev/dsh-genui.git"
-GIT_URL="https://github.com/omdsh-dev/dsh-genui.git"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+REPO_URL="link:$REPO_ROOT"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 # Web 会话的 skill 服务从 agentsHome（默认 ~/.agents）发现技能，dshHome 的
 # ~/.dsh/skills 在部分宿主演进中不再进入会话目录 —— 两个根都同步，模型从哪
@@ -93,7 +93,7 @@ sync_skill() {
   SKILL_FILE=$(cd "$DSH_HOME" && DSH_HOME="$DSH_HOME" PROFILE="$PROFILE" node -e "
 const path = require('path')
 try {
-  const pkg = require.resolve('@omdsh-dev/dsh-genui/package.json', { paths: [process.env.DSH_HOME + '/profiles/' + process.env.PROFILE] })
+  const pkg = require.resolve('dsh-genui-charts/package.json', { paths: [process.env.DSH_HOME + '/profiles/' + process.env.PROFILE] })
   console.log(path.join(path.dirname(pkg), 'SKILL.md'))
 } catch { process.exit(1) }
 " 2>/dev/null || true)
@@ -105,7 +105,7 @@ try {
   sync_skill_to "$SKILL_FILE" "$AGENTS_HOME/skills/genui/SKILL.md" "AGENTS_HOME/skills/genui"
 }
 
-echo "${BOLD}== dsh-genui 安装（profile: ${PROFILE}）==${NC}"
+echo "${BOLD}== dsh-genui-charts 安装（profile: ${PROFILE}）==${NC}"
 
 # ── 前置 1: dsh ────────────────────────────────────────────────────────────
 if ! command -v dsh >/dev/null 2>&1; then
@@ -119,24 +119,24 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 ok "pnpm: $(pnpm --version)"
 
-# ── 前置 3: 仓库可访问（公开仓库，无需登录；只验网络可达）─────────────────────────────
-if ! GIT_TERMINAL_PROMPT=0 git ls-remote "$GIT_URL" HEAD >/dev/null 2>&1; then
-  fail "无法访问仓库 $GIT_URL —— 请检查网络/代理后重试。"
+# ── 前置 3: 本地 checkout 已构建（link 安装直接用 lib/ 产物）──────────────
+if [ ! -f "$REPO_ROOT/lib/client.js" ] || [ ! -f "$REPO_ROOT/lib/index.js" ]; then
+  fail "当前 checkout 尚未构建（缺 lib/client.js / lib/index.js）——请先在该目录执行 pnpm install && pnpm build。"
 fi
-ok "GitHub 公开仓库可访问"
+ok "本地 checkout 已构建（link:$REPO_ROOT）"
 
 # ── 已装检测（幂等）────────────────────────────────────────────────────────
 PROFILE_PKG="$DSH_HOME/profiles/$PROFILE/package.json"
-if [ -f "$PROFILE_PKG" ] && grep -q "dsh-genui" "$PROFILE_PKG" 2>/dev/null; then
+if [ -f "$PROFILE_PKG" ] && grep -q "dsh-genui-charts" "$PROFILE_PKG" 2>/dev/null; then
   warn "插件已在 profile '$PROFILE' 中。"
   sync_skill
-  printf "  想重装就手动执行: dsh plugin --profile %s remove @omdsh-dev/dsh-genui，再跑本脚本。\n" "$PROFILE"
+  printf "  想重装就手动执行: dsh plugin --profile %s remove dsh-genui-charts，再跑本脚本。\n" "$PROFILE"
   printf "  否则直接: 重启 dsh web + 硬刷新 即可验证。\n"
   exit 0
 fi
 
 # ── 安装 ───────────────────────────────────────────────────────────────────
-echo "安装中（拉取插件代码并安装依赖，约 1-2 分钟）..."
+echo "安装中（link 安装本 checkout，约数秒）..."
 dsh plugin --profile "$PROFILE" add "$REPO_URL"
 sync_skill
 

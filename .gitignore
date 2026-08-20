@@ -1,3 +1,17 @@
+# dependencies
 node_modules/
+
+# build output (emitted by `pnpm build`: tsc + tsdown)
+lib/
+
+# TypeScript incremental
 *.tsbuildinfo
-lib/*.map
+
+# source maps
+*.map
+
+# macOS
+.DS_Store
+
+# test / coverage
+coverage/

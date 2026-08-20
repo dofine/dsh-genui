@@ -443,3 +443,61 @@ describe('repairGenuiSpec: color field whitelist (CSS injection channel)', () =>
     expect(scene.meshes[0]!.color).toBeUndefined()
   })
 })
+
+describe('repairGenuiSpec: echarts / flint nodes', () => {
+  it('keeps a plain-data echarts option intact', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        { type: 'echarts', option: { xAxis: { type: 'category', data: ['a', 'b'] }, series: [{ type: 'bar', data: [1, 2] }] }, height: 300 },
+      ],
+    })
+    const node = spec!.items[0] as { type: string; option: Record<string, unknown>; height?: number }
+    expect(node.type).toBe('echarts')
+    expect(node.option.series).toEqual([{ type: 'bar', data: [1, 2] }])
+    expect(node.height).toBe(300)
+  })
+
+  it('strips function-valued executable keys from an echarts option', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        {
+          type: 'echarts',
+          option: {
+            tooltip: { formatter: () => 'xss' },
+            series: [{ type: 'bar', data: [1, 2], label: { formatter: '{c}' } }],
+          },
+        },
+      ],
+    })
+    const node = spec!.items[0] as { option: Record<string, unknown> }
+    // formatter function dropped; the string-template formatter survives.
+    expect(node.option.tooltip).toEqual({})
+    expect((node.option.series as Array<Record<string, unknown>>)[0]!.label).toEqual({ formatter: '{c}' })
+  })
+
+  it('rejects an echarts node whose option is not a plain object', () => {
+    expect(repairGenuiSpec({ items: [{ type: 'echarts', option: 'nope' }] })?.items[0]).toBeUndefined()
+    expect(repairGenuiSpec({ items: [{ type: 'echarts', option: [1, 2] }] })?.items[0]).toBeUndefined()
+  })
+
+  it('repairs a flint input and drops a missing chartType', () => {
+    const good = repairGenuiSpec({
+      items: [
+        {
+          type: 'flint',
+          input: {
+            data: { values: [{ m: 'Jan', s: 10 }] },
+            semantic_types: { m: 'Month', s: 'Amount' },
+            chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'm' }, y: { field: 's' } } },
+          },
+        },
+      ],
+    })
+    const node = good!.items[0] as { type: string; input: { chart_spec: { chartType: string } } }
+    expect(node.type).toBe('flint')
+    expect(node.input.chart_spec.chartType).toBe('Bar Chart')
+
+    const bad = repairGenuiSpec({ items: [{ type: 'flint', input: { data: { values: [] }, chart_spec: { encodings: {} } } }] })
+    expect(bad?.items[0]).toBeUndefined()
+  })
+})

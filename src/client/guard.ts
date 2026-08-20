@@ -18,7 +18,7 @@
  * - The whole spec carries a node budget; once exhausted, remaining siblings
  *   are elided.
  */
-import type { GenuiFileTreeNode, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec } from './spec.ts'
+import type { GenuiFileTreeNode, GenuiFlintInput, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec } from './spec.ts'
 import { wrapSingleComponentRoot } from './spec.ts'
 
 /** Hard resource limits enforced by repair (and mirrored at render time). */
@@ -62,6 +62,8 @@ export const GENUI_LIMITS = {
   maxKeyValuePairs: 24,
   /** Maximum `file-tree` nesting. */
   maxTreeDepth: 6,
+  /** Maximum rendered height (px) for echarts/flint chart blocks. */
+  maxChartHeight: 420,
 } as const
 
 /** Result of `validateGenuiSpec`. */
@@ -477,6 +479,22 @@ function repairNode(value: unknown, ctx: RepairCtx, depth: number): GenuiNode | 
         ...opt('action', str(v.action, 200)),
       }
     }
+    case 'echarts': {
+      const option = sanitizeEchartsOption(v.option)
+      if (option === undefined) return null
+      return {
+        type: 'echarts', option,
+        ...opt('height', int(v.height, 80, GENUI_LIMITS.maxChartHeight)),
+      }
+    }
+    case 'flint': {
+      const input = repairFlintInput(v.input)
+      if (input === undefined) return null
+      return {
+        type: 'flint', input,
+        ...opt('height', int(v.height, 80, GENUI_LIMITS.maxChartHeight)),
+      }
+    }
     default:
       // Plugin-registered custom node types are opaque to the guard: pass
       // through unchanged (the renderer's default branch resolves them).
@@ -573,6 +591,112 @@ function repairSeries(v: unknown, cap: number, pointCap: number): Array<{ label:
     out.push({ label, data, ...opt('color', o === undefined ? undefined : color(o.color)) })
   }
   return out
+}
+
+/* ---------------- echarts / flint sanitizers ---------------- */
+
+/**
+ * ECharts option keys that are execution channels and therefore STRIPPED
+ * wholesale: `formatter` (template strings are fine, functions/JS are not),
+ * and any `*function*`-style field. ECharts accepts functions for formatters,
+ * graphic elements, and custom series; a model/hostile spec could smuggle JS
+ * there. We drop any key whose own value is not plain JSON data.
+ */
+const ECHARTS_EXEC_KEYS = new Set(['formatter', 'formatterParams', 'renderItem', 'animationDelayUpdate'])
+
+/**
+ * Deep-sanitize a model-authored ECharts `option` into plain JSON data only:
+ * walk every object — dropping functions (which cannot survive JSON anyway,
+ * but a hostile spec could reach repair through a non-JSON path), key names
+ * longer than 128 chars, and the known executable keys above — and cap depth
+ * and node count so a pathological option never freezes the renderer. Returns
+ * undefined when the root is not an object.
+ * @param v - the raw `option` value.
+ * @returns the sanitized plain-data option, or undefined.
+ */
+function sanitizeEchartsOption(v: unknown): Record<string, unknown> | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const budget = { nodes: 0 }
+  const out = sanitizeValue(v, 0, budget)
+  return out === undefined ? undefined : out as Record<string, unknown>
+}
+
+/** Shared constant: max tree depth and node count for an echarts/flint option. */
+const MAX_OPTION_DEPTH = 12
+const MAX_OPTION_NODES = 20_000
+
+/**
+ * Recursively copy a plain-JSON value, dropping non-data members.
+ * @param v - the value to copy.
+ * @param depth - current nesting depth.
+ * @param budget - shared node-count budget.
+ * @returns the sanitized copy, or undefined at the root only.
+ */
+function sanitizeValue(v: unknown, depth: number, budget: { nodes: number }): unknown {
+  if (budget.nodes >= MAX_OPTION_NODES) return undefined
+  budget.nodes += 1
+  if (depth > MAX_OPTION_DEPTH) return undefined
+  if (typeof v === 'string') return v.length > 4000 ? v.slice(0, 4000) : v
+  if (typeof v === 'number') return Number.isFinite(v) && Math.abs(v) <= 1e15 ? v : 0
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'function') return undefined
+  if (v === null) return null
+  if (Array.isArray(v)) {
+    const out: unknown[] = []
+    for (const item of v) {
+      const c = sanitizeValue(item, depth + 1, budget)
+      if (c !== undefined) out.push(c)
+    }
+    return out
+  }
+  if (typeof v === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v)) {
+      if (k.length > 128) continue
+      if (ECHARTS_EXEC_KEYS.has(k) && typeof val === 'function') continue
+      if (ECHARTS_EXEC_KEYS.has(k) && typeof val !== 'string') continue
+      const c = sanitizeValue(val, depth + 1, budget)
+      if (c !== undefined) out[k] = c
+    }
+    return out
+  }
+  return undefined
+}
+
+/**
+ * Repair a Flint `ChartAssemblyInput`: the `data` values / `encodings` /
+ * `semantic_types` / `chart_spec` fields carry plain JSON, so they go
+ * through `sanitizeValue` to strip any non-data member, while the narrow
+ * `chartType` string and size numbers are validated explicitly. Returns
+ * undefined when the root is not an object or the required `chart_spec`
+ * (or its `chartType`) is missing.
+ * @param v - the raw Flint input value.
+ * @returns the repaired input, or undefined.
+ */
+function repairFlintInput(v: unknown): GenuiFlintInput | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const data = sanitizeValue((v as { data?: unknown }).data, 0, { nodes: 0 })
+  const spec = (v as { chart_spec?: unknown }).chart_spec
+  if (typeof spec !== 'object' || spec === null || Array.isArray(spec)) return undefined
+  const chartType = (spec as { chartType?: unknown }).chartType
+  if (typeof chartType !== 'string' || chartType === '' || chartType.length > 128) return undefined
+  const cleanedSpec = sanitizeValue(spec, 0, { nodes: 0 })
+  if (cleanedSpec === undefined || typeof cleanedSpec !== 'object') return undefined
+  const input: GenuiFlintInput = {
+    data: data as GenuiFlintInput['data'],
+    chart_spec: cleanedSpec as GenuiFlintInput['chart_spec'],
+  }
+  const semantic = (v as { semantic_types?: unknown }).semantic_types
+  if (semantic !== undefined) {
+    const s = sanitizeValue(semantic, 0, { nodes: 0 })
+    if (s !== undefined) input.semantic_types = s as Record<string, string>
+  }
+  const options = (v as { options?: unknown }).options
+  if (options !== undefined) {
+    const o = sanitizeValue(options, 0, { nodes: 0 })
+    if (o !== undefined) input.options = o as Record<string, unknown>
+  }
+  return input
 }
 
 function repairTabs(v: unknown, ctx: RepairCtx, depth: number): Array<{ label: string; items: GenuiNode[] }> | undefined {

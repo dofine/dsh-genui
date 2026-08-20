@@ -15,7 +15,7 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 
 布局：`text` `row` `col` `grid` `card` `divider` `spacer`
 展示：`stat` `badge` `progress` `list` `table` `keyvalue` `avatar` `audio` `video` `timeline` `file-tree` `breadcrumb` `diff` `json` `code` `callout` `steps`
-图表：`chart`（bars/line/donut，可多序列）`plot`（数学函数图）
+图表：`chart`（bars/line/donut，可多序列）`plot`（数学函数图）`echarts`（原生 ECharts option）`flint`（Flint 语义规格 → ECharts）
 交互：`button` `input` `select` `checkbox` `radio` `switch` `textarea` `tabs` `accordion` `copy`
 高级：`mermaid`（流程图/时序/甘特等）`scene3d`（3D WebGL）`quiz`（点选判题 + 解析 + 重试）
 
@@ -48,6 +48,8 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 ### 图表
 - chart: `{"type":"chart","kind":"bars|line|donut","data":[{"label":"...","value":n,"color":"#hex?"}],"series":[...]?}` — bars 默认；line 趋势；donut 占比；series 字段 = 分组柱状图；负值数据：柱高为 0 但数值标注照显、donut 负值记 0 弧长（line 正常画负区间）
 - plot: `{"type":"plot","series":[{"expr":"a*sin(b*x)","label":"...","color":"#hex?","params":[{"name":"a","value":1,"min":0,"max":5,"animateTo":3,"durationMs":4000,"loop":true},{"name":"b","value":1,"min":0.5,"max":5}]}],"xMin":-6.28,"xMax":6.28,"title":"..."}` — SVG 函数图；**series 可带 `"kind":"line|area|scatter"`**（缺省 line；area 填色到基线；scatter 散点）；**params 渲染成实时滑块**（拖动即时重绘，**y 轴锁定**=只变曲线不变数轴）；**animateTo 参数会显示播放按钮**（自动动画演示）；SVG 可拖拽平移、滚轮缩放；表达式支持 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x（其他字母=参数）
+- echarts: `{"type":"echarts","option":{...},"height":n?}` — 直接内嵌原生 ECharts option（折线/柱状/饼/散点/热力/桑基等任意 ECharts 图），浏览器用 echarts 引擎渲染，支持悬浮 tooltip、缩放等交互。**只写声明式 JSON**：`formatter`/`renderItem` 等字段必须是字符串模板或纯数据，**绝不能写 JS 函数**（守卫会丢弃函数字段）；高度 `height` 上限 420px。
+- flint: `{"type":"flint","input":{"data":{"values":[...]},"semantic_types":{...},"chart_spec":{"chartType":"...","encodings":{...}}},"height":n?}` — 用 Flint 的语义规格画图：写 `chartType`（如 `"Bar Chart"`/`"Line Chart"`/`"Pie Chart"`/`"Scatter Plot"`/`"Heatmap"`…）+ `encodings`（通道→字段）+ `semantic_types`（字段→语义类型，如 Amount/Percentage/Date/Category/Quantity）+ 绑定 `data.values`（小表内联，大表需先转换）。前端用 `assembleECharts` 编译成 ECharts 渲染。语义类型决定格式化（货币/百分比/颜色/零基线）。**不要内联大表**；聚合/筛选/透视先上数据工具转换好再绑定。
 
 ### 交互
 **本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。**交互组件必须带 action：不带 action 的按钮渲染为禁用态，用户点不了；带 action 的按钮点击后有「已触发」本地反馈。**

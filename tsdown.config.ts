@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const ID = '@omdsh-dev/dsh-genui'
+const ID = 'dsh-genui-charts'
 const PROJECT_ROOT = dirname(fileURLToPath(import.meta.url))
 
 /** Module-table entries this bundle may leave external: platform seed rows
@@ -136,7 +136,7 @@ const clientConfig: UserConfig = {
  * main client bundle never contains either engine, so the eager download
  * drops from ~9 MB to the small renderer core.
  */
-function assetConfig(name: 'mermaid' | 'three', entry: string): UserConfig {
+function assetConfig(name: 'mermaid' | 'three' | 'echarts' | 'flint', entry: string): UserConfig {
   return {
     name: `${ID}/assets/${name}`,
     entry: { [`assets/${name}`]: entry },
@@ -189,4 +189,6 @@ export default [
   clientConfig,
   assetConfig('mermaid', 'src/client/asset-mermaid.ts'),
   assetConfig('three', 'src/client/asset-three.ts'),
+  assetConfig('echarts', 'src/client/asset-echarts.ts'),
+  assetConfig('flint', 'src/client/asset-flint.ts'),
 ]

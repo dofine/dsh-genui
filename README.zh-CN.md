@@ -1,4 +1,4 @@
-# 🎨 dsh-genui
+# 🎨 dsh-genui-charts
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 
 > 让模型的回答长出界面——文字还在，可交互的 UI 已经能用。
 >
-> 🔌 生态：仓库已挂 `#dsh` · `#dsh-plugin` topic，欢迎 @dsh-plugin 收录。
+> 🎯 这是 [`omdsh-dev/dsh-genui`](https://github.com/omdsh-dev/dsh-genui) 的一个 fork，把 **ECharts** 和 **Flint** 融进 `dsh-ui` fence 词汇表：模型现在能在回答里内联渲染交互式数据图表（柱/折线/饼/热力/桑基等你所能想到的任意 ECharts 图），既可以直接写原生 ECharts `option`，也可以写声明式 Flint `ChartAssemblyInput` 让前端编译成 ECharts。
 
 模型不再只回你文字。装上它，你问"这个月订单怎么样"，它一边分析一边在回答里渲染出一张**能点的数据面板**：看趋势、拖滑块、按刷新，模型会真的响应你。
 
@@ -57,11 +57,11 @@ https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
 安装（一行命令，自动带上全部依赖）：
 
 ```sh
-# GitHub 公开仓库安装（无需 npm 账号）
-dsh plugin --profile web add git+https://github.com/omdsh-dev/dsh-genui.git
+# 本地源码安装（此 fork 位于本地 checkout）
+dsh plugin --profile web add link:/path/to/dsh-genui-charts
 ```
 
-> ⚠️ **别用 `link:` 装一个刚 clone 的目录**——`link:` 不会安装插件的依赖（mermaid / three / react），装完渲染器会挂。请用上面的 git URL 方式；只有本地开发迭代才用 link:（见下文）。
+> ⚠️ **别用 `link:` 装一个刚 clone、还没构建的目录**——`link:` 不会安装插件的依赖（mermaid / three / echarts / flint-chart / react），而且 `lib/` 构建产物**没有**提交（由 `pnpm build` 产出）。请先在 checkout 里 `pnpm install && pnpm build`，再 `link:` 安装。见下文「开发者迭代（link 模式）」。
 
 重启 dsh web + 硬刷新，新会话里说"用 dsh-ui 画个统计看板"验证。
 
@@ -70,16 +70,17 @@ dsh plugin --profile web add git+https://github.com/omdsh-dev/dsh-genui.git
 clone 后直接跑，脚本会检查上述前置、执行安装、并提示重启：
 
 ```sh
-git clone https://github.com/omdsh-dev/dsh-genui.git
-cd dsh-genui
+git clone <本仓库>
+cd dsh-genui-charts
 ./scripts/install.sh
 ```
 
 ### 开发者迭代（link 模式）
 
 ```sh
-cd dsh-genui
+cd dsh-genui-charts
 pnpm install
+pnpm build
 dsh plugin --profile web add link:$PWD
 ```
 
@@ -93,6 +94,9 @@ dsh plugin --profile web add link:$PWD
 <p align="center">
   <img src="./assets/showcase-plot.png" width="60%" alt="函数绘图：拖动滑块实时重绘">
 </p>
+
+- **ECharts 图表**（本 fork）：`{"type":"echarts","option":{...}}` 直接渲染任意 ECharts 图（柱/折线/饼/散点/热力/桑基…），带悬浮 tooltip 与缩放交互。`option` 经深度净化——函数型 `formatter`/`renderItem` 字段被剥离，任何脚本都不会进入 DOM。
+- **Flint 图表**（本 fork）：`{"type":"flint","input":{...}}` 承载声明式 Flint `ChartAssemblyInput`（`chartType` + `encodings` + `semantic_types` + 绑定 `data.values`），前端经 `flint-chart/echarts` 编译成 ECharts option 再渲染；语义类型（Amount / Percentage / Date / Category…）自动决定坐标轴格式化、零基线、配色。
 
 - **测验**：`quiz` 点选判题 + 解析 + 重试；带 `action` 时答案同时回传模型（判题仍本地即时）
 - **本地判卷（交卷）**：多道选择题 = 每题的 `radio` 加 `group` + `answer`（正确答案）+ `explanation`（解析），再加一个 `submit` 交卷按钮——用户全部选完点一次，**分数、每题对错、解析当场在 UI 里出现，零模型往返**；题目随即锁定，「重新作答」本地重置（可选 `resetAction` 通知模型）。题目没带答案时才退回聚合 action（`fields` 收集所有带 `id` 的输入）
@@ -128,15 +132,15 @@ dsh plugin --profile web add link:$PWD
 
 模型把界面描述写成 JSON 放进 `dsh-ui` 围栏，浏览器端渲染器（`src/client`）通过主仓 `fence-registry` 接口认领这门语言并渲染。组件是白名单的，模型塞不进 HTML/脚本；函数表达式走独立解析器，不用 eval。
 
-主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid 与 three.js 引擎单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
+主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid、three.js、echarts、flint 引擎单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
 
 ## ❓ 常见问题
 
 - **显示成代码块？** 先在浏览器控制台找 `[genui] client active; fence-channel=registry|dom`。没有这行，即使 `client.js` 返回 200，也只是下载了文件、没有激活：请对齐网页配置依赖名、`package.json.name`、`cordis.patch.yml`、ModuleLoader id 和配置中的 bundle 名。出现这行后再查围栏标签/正文；宿主没有 registry 时会自动走 DOM 通道。
 - **渲染 dsh-ui fence 时聊天界面白屏？** dsh 版本太旧——先更新 dsh 再重装插件。
 - **`dsh: pnpm not found on PATH`？** 装 pnpm 后**新开终端**再试（`corepack enable` 或 `npm i -g pnpm`）。
-- **安装时卡在 git 凭据/404？** 仓库是公开的（`omdsh-dev/dsh-genui`），上面的 git URL 无需登录；`@omdsh-dev/dsh-genui` 返回 404，表示 npm 包尚未发布。
-- **装了但 scene3d/mermaid 不渲染？** 引擎（mermaid / three）不再内联进 client.js——它们在首次用到时按需加载（`/plugins/@omdsh-dev/dsh-genui/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就卸掉重装（`dsh plugin --profile web remove @omdsh-dev/dsh-genui` 后再 add）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
+- **安装时卡在 git 凭据/404？** 上游仓库是公开的（`omdsh-dev/dsh-genui`）；本 fork 是本地库，用 `link:` 安装即可（见快速开始）。
+- **装了但 scene3d/mermaid/echarts/flint 不渲染？** 引擎（mermaid / three / echarts / flint）不再内联进 client.js——它们在首次用到时按需加载（`/plugins/dsh-genui-charts/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就卸掉重装（`dsh plugin --profile web remove dsh-genui-charts` 后再 add）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
 - **模型不主动输出？** 重启后新会话生效；或直接说"用 dsh-ui 输出"。
 - **clone 后没有 lib/？** `pnpm install && pnpm run check` 自己构建。
 

@@ -7,7 +7,7 @@
  *
  * The section is a convention section (order 100-199), placed after the bash
  * guidance so the model sees it among its output-format rules.
- * @module @omdsh-dev/dsh-genui
+ * @module dsh-genui-charts
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -36,7 +36,7 @@ export const GENUI_SECTION_ORDER = 105
  */
 
 /** Route prefix under /plugins; anything under it is this plugin's asset. */
-const ASSET_ROUTE_PATH = '/plugins/@omdsh-dev/dsh-genui/assets'
+const ASSET_ROUTE_PATH = '/plugins/dsh-genui-charts/assets'
 
 /** Safe flat file names only: no slashes, no traversal, js assets only. */
 const ASSET_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
@@ -98,7 +98,7 @@ The spec is a white-listed component tree rendered inline where the fence sits. 
 
 - 布局: text · row · col · grid · card · divider · spacer
 - 展示: badge · stat · progress · list · table · keyvalue · avatar · audio · video · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy
-- 图表: chart (bars|line|donut) · plot (函数图)
+- 图表: chart (bars|line|donut) · plot (函数图) · echarts (原生 ECharts option) · flint (Flint ChartAssemblyInput → ECharts)
 - 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
 - 高级: mermaid (flowchart/sequence/class/gantt/pie/er/state/journey) · scene3d (3D WebGL)
 

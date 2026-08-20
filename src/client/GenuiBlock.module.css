@@ -756,6 +756,21 @@
 .mermaidErr { color: var(--dsw-alias-state-error-primary, #ff6b6b); font-size: var(--dsl-g-font-meta); }
 .mermaidHint { color: var(--dsw-alias-label-tertiary); font-size: var(--dsl-g-font-meta); }
 
+/* ---------- echarts / flint ---------- */
+
+.echartsBox {
+  width: 100%;
+  border-radius: var(--dsl-g-radius-surface);
+  border: 1px solid var(--dsl-g-border);
+  background: var(--dsw-alias-bg-base, #17171a);
+  /* No overflow: hidden — the ECharts tooltip is an absolutely-positioned
+   * child of this container, and clipping it here truncates the hover
+   * tooltip at the block edge. The chart canvas fills the box exactly, so
+   * nothing spills visually except the (now confined) tooltip overlay. */
+  overflow: visible;
+}
+.echartsBox > * { width: 100%; height: 100%; }
+
 /* ---------- scene3d ---------- */
 
 .scene3dWrap { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }

@@ -106,9 +106,9 @@ const logTail = async (n = 30) => {
 try {
   // ── 安装插件 ────────────────────────────────────────────────────────────
   if (INSTALL === 'git') {
-    log('安装插件（git+https，公开仓库）...')
-    const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', 'git+https://github.com/omdsh-dev/dsh-genui.git'], { env, stdio: 'inherit' })
-    if (r.status !== 0) fail('git URL 安装失败（见上方输出）')
+    log('安装插件（link 当前工作区，本地 fork）...')
+    const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', `link:${REPO_ROOT}`], { env, stdio: 'inherit' })
+    if (r.status !== 0) fail('link 安装失败（见上方输出）')
   } else if (INSTALL === 'tarball') {
     log(`安装插件（tarball ${TARBALL}）...`)
     const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', TARBALL], { env, stdio: 'inherit' })
@@ -171,7 +171,7 @@ try {
   await page.waitForTimeout(5000)
 
   // client.js 必须 200（插件 bundle 可加载）；404 直接失败
-  const clientRes = await fetch(`${BASE}/plugins/@omdsh-dev/dsh-genui/client.js`)
+  const clientRes = await fetch(`${BASE}/plugins/dsh-genui-charts/client.js`)
   if (!clientRes.ok) {
     await page.screenshot({ path: join(artifactsDir, 'e2e-fail-client404.png') })
     await logTail()

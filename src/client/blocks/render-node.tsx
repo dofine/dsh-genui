@@ -2,7 +2,7 @@
  * The recursive render dispatcher: maps the white-listed GenuiNode union to
  * concrete components. Leaf cases render inline; compound families live in
  * the sibling block modules. Depth-guarded against pathological specs.
- * @module @omdsh-dev/dsh-genui/client/blocks/render-node
+ * @module dsh-genui-charts/client/blocks/render-node
  */
 import { type ReactNode, type ComponentType } from 'react'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
@@ -12,6 +12,7 @@ import type { GenuiList, GenuiNode } from '../spec.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
 import { AudioNode, avatarColor, ClickFeedbackButton, VideoNode } from './basic.tsx'
 import { ChartNode, TableNode } from './charts.tsx'
+import { EchartsNode, FlintNode } from './charts-extra.tsx'
 import {
   InputNode, RadioNode, SelectNode, SliderNode, SubmitNode, SwitchNode, TextareaNode,
 } from './forms.tsx'
@@ -200,6 +201,8 @@ export function renderNode(
     }
     case 'table': return <TableNode key={key} node={node} />
     case 'chart': return <ChartNode key={key} chart={node} />
+    case 'echarts': return <EchartsNode key={key} node={node} />
+    case 'flint': return <FlintNode key={key} node={node} />
     case 'tabs': return <TabsNode key={key} tabs={node} onAction={onAction} depth={depth + 1} answers={answers} />
     case 'avatar': {
       return (

@@ -1,4 +1,4 @@
-# 🎨 dsh-genui
+# 🎨 dsh-genui-charts
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 
 > Give the model's answers a face — the text is still there, and an interactive UI is already live.
 >
-> 🔌 Ecosystem: the repo carries the `#dsh` · `#dsh-plugin` topics — welcome to be listed by @dsh-plugin.
+> 🎯 A fork of [`omdsh-dev/dsh-genui`](https://github.com/omdsh-dev/dsh-genui) that fuses **ECharts** and **Flint** into the `dsh-ui` fence vocabulary: the model can now render interactive data charts (bar / line / pie / heatmap / anything ECharts draws) inline, either by writing a raw ECharts `option` or a declarative Flint `ChartAssemblyInput` that the client compiles to ECharts.
 
 The model no longer just answers in text. Install this plugin, ask "how are this month's orders doing", and it renders a **clickable data panel** right inside the answer as it analyzes: watch trends, drag sliders, hit refresh — and the model actually responds.
 
@@ -42,7 +42,7 @@ The repository ships both renderer channels, the host plugin, and the built brow
 
 ## ✨ Before vs. after
 
-| Plain answer | With dsh-genui |
+| Plain answer | With dsh-genui-charts |
 |---|---|
 | "Revenue this month: ¥128,430, +12.4% MoM — watch the conversion rate." | One line of analysis + three stat cards (revenue / orders / conversion), a trend chart, and a progress bar rendered right beside it |
 | Want to see more? Type another question. | The panel already has "Refresh" / "Switch view" buttons — click, and the model updates the data |
@@ -57,11 +57,11 @@ Prerequisites — all required:
 Install (one command, all dependencies included):
 
 ```sh
-# Public GitHub install (works without an npm account)
-dsh plugin --profile web add git+https://github.com/omdsh-dev/dsh-genui.git
+# Local source install (this fork lives in a local checkout)
+dsh plugin --profile web add link:/path/to/dsh-genui-charts
 ```
 
-> ⚠️ **Don't use `link:` on a freshly cloned directory** — `link:` does not install the plugin's dependencies (mermaid / three / react), so the renderer will break. Use the git URL form above; reserve `link:` for local development iteration (see below).
+> ⚠️ **Don't use `link:` on a freshly cloned directory without building first** — `link:` does not install the plugin's dependencies (mermaid / three / echarts / flint-chart / react), and the `lib/` build output is NOT committed (`pnpm build` emits it). Run `pnpm install && pnpm build` in the checkout before `link:`-installing. See "Developer iteration (link mode)" below.
 
 Restart dsh web + hard refresh, then in a new session say "use dsh-ui to draw a stats dashboard" to verify.
 
@@ -70,16 +70,17 @@ Restart dsh web + hard refresh, then in a new session say "use dsh-ui to draw a 
 After cloning, just run it — the script checks the prerequisites above, performs the install, and prompts you to restart:
 
 ```sh
-git clone https://github.com/omdsh-dev/dsh-genui.git
-cd dsh-genui
+git clone <this repo>
+cd dsh-genui-charts
 ./scripts/install.sh
 ```
 
 ### Developer iteration (link mode)
 
 ```sh
-cd dsh-genui
+cd dsh-genui-charts
 pnpm install
+pnpm build
 dsh plugin --profile web add link:$PWD
 ```
 
@@ -92,6 +93,13 @@ dsh plugin --profile web add link:$PWD
 
 <p align="center">
   <img src="./assets/showcase-plot.png" width="60%" alt="Function plotting: drag a slider for live redraw">
+</p>
+
+- **ECharts charts** (this fork): `{"type":"echarts","option":{...}}` renders any ECharts chart (bar / line / pie / scatter / heatmap / sankey …) with hover tooltips and zoom. The `option` is deep-sanitized — function-valued `formatter`/`renderItem` fields are stripped, so no script ever reaches the DOM.
+- **Flint charts** (this fork): `{"type":"flint","input":{...}}` takes a declarative Flint `ChartAssemblyInput` (`chartType` + `encodings` + `semantic_types` + bound `data.values`), compiles it to an ECharts option client-side via `flint-chart/echarts`, and renders it. Semantic types (Amount / Percentage / Date / Category …) drive axis formatting, zero-baseline, and color scales automatically.
+
+<p align="center">
+  <img src="./assets/showcase-panel.png" width="92%" alt="Interactive monitoring panel">
 </p>
 
 - **Quiz**: `quiz` grades on click with explanation and retry; with `action`, the answer is also sent back to the model (grading stays local and instant)
@@ -128,15 +136,15 @@ What you see: two stat cards.
 
 The model writes the interface description as JSON inside a `dsh-ui` fence; the browser-side renderer (`src/client`) claims this language through the main repo's `fence-registry` interface and renders it. Components are whitelisted — the model can't smuggle in HTML/scripts; function expressions go through a standalone parser, never `eval`.
 
-The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid and three.js engines are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
+The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, three.js, echarts, and flint engines are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
 
 ## ❓ FAQ
 
 - **Rendering as a code block?** First check the browser console for `[genui] client active; fence-channel=registry|dom`. If absent, the client bundle was not activated even if its URL returns 200 — align the profile dependency, `package.json.name`, `cordis.patch.yml`, ModuleLoader id, and configured bundle name. If present, inspect the fence label/body; registry-less hosts automatically use the DOM channel.
 - **Chat UI goes blank when rendering a dsh-ui fence?** Your dsh is too old — update dsh first, then reinstall the plugin.
 - **`dsh: pnpm not found on PATH`?** Install pnpm, then **open a new terminal** and retry (`corepack enable` or `npm i -g pnpm`).
-- **Stuck on git credentials / 404 during install?** The repo is public (`omdsh-dev/dsh-genui`) — the git URL above needs no login; a 404 for `@omdsh-dev/dsh-genui` means the npm package has not been published yet.
-- **Installed but scene3d/mermaid don't render?** The engines (mermaid / three) are no longer inlined in client.js — they load on demand the first time they're used (`/plugins/@omdsh-dev/dsh-genui/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, remove and reinstall (`dsh plugin --profile web remove @omdsh-dev/dsh-genui`, then add again). Hosts without the asset routes degrade to source/load-error hints — update dsh.
+- **Stuck on git credentials / 404 during install?** The repo is public (`omdsh-dev/dsh-genui` upstream); this fork is local — install via `link:` (see Quick start).
+- **Installed but scene3d/mermaid/echarts/flint don't render?** The engines (mermaid / three / echarts / flint) are no longer inlined in client.js — they load on demand the first time they're used (`/plugins/dsh-genui-charts/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, remove and reinstall (`dsh plugin --profile web remove dsh-genui-charts`, then add again). Hosts without the asset routes degrade to source/load-error hints — update dsh.
 - **Model not outputting fences?** New sessions pick it up after a restart; or just say "output it with dsh-ui".
 - **No lib/ after cloning?** Build it yourself: `pnpm install && pnpm run check`.
 

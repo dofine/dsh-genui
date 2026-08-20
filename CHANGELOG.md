@@ -1,6 +1,18 @@
 # Changelog
 
 ## [Unreleased]
+
+### Fork: dsh-genui → dsh-genui-charts
+
+本地 fork（未发布）：在 `omdsh-dev/dsh-genui` 上融合 **ECharts + Flint** 两个图表节点，白名单新增 `echarts` / `flint`。
+
+- **`echarts` 节点**：`{"type":"echarts","option":{...},"height":n?}` 直接内嵌原生 ECharts option；守卫 `sanitizeEchartsOption` 深拷贝剥离函数值、`formatter`/`renderItem` 等可执行字段，深度/节点数上限；渲染层统一注入 `tooltip.confine=true`（模型未显式指定时），并移除 `.echartsBox` 的 `overflow:hidden` 避免悬浮 tooltip 被裁剪。
+- **`flint` 节点**：`{"type":"flint","input":{...}}` 承载 Flint `ChartAssemblyInput`（`data.values` + `semantic_types` + `chart_spec`），前端经 `flint-chart/echarts` 的 `assembleECharts` 编译为 ECharts option 再渲染；`repairFlintInput` 校验 `chartType` 存在并走同一 `sanitizeValue` 深拷贝。
+- **懒加载 asset**：`lib/assets/echarts.js`（~1.0MB）与 `lib/assets/flint.js`（~225KB）按需 script 注入，主 client bundle 保持轻量；`echarts.js` 加入 idle prefetch。
+- **依赖**：新增 `echarts@^5.5.0`、`flint-chart@^0.5.1`（均为 devDependencies，打入懒加载 asset，宿主零 chart 依赖）。
+- **教学**：`SKILL.md` 与 `GENUI_SECTION_TEXT` 补充 `echarts`/`flint` 节点语法与安全约束（函数字段禁用、大表需先转换）。
+- **命名/打包**：包名 `@omdsh-dev/dsh-genui` → `dsh-genui-charts`（本地库，不公开）；`lib/` 改为 gitignore（`pnpm build` 产出），移除上游 `site/`、`docs/` 与产品站部署 workflow。
+
 ### 兼容性
 - **dsh 0.1.0-rc.8**：对齐全部宿主 peer 依赖并补齐实际使用的 conversation、input-trigger、session 直接声明；改用 ui-tool 的公开客户端入口，测试和构建不再读取本机旧源码快照。`tsc`、`tsdown`、Vitest 全通过（302 passed / 104 skipped，0 失败）。
 ### 新增
