@@ -14,7 +14,8 @@
 
 <div align="center">
 
-https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
+<video src="./assets/demo-flint-echarts.mp4" controls muted loop playsinline width="92%" poster="./assets/showcase-panel.png"></video>
+<br><em>ECharts + Flint 图表节点实测：同一份数据只改 Flint 的 <code>chartType</code>，柱状 / 折线 / 饼图三视图，悬浮 tooltip 约束在图表框内。</em>
 
 </div>
 
@@ -23,7 +24,7 @@ https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
   <br><em>实际效果：模型输出的一块可交互监控面板（点「刷新」它会重新生成数据）</em>
 </p>
 
-> 播放器没出来可 [下载 mp4](./assets/demo.mp4)；四幕演示脚本见 [demo-prompts.md](./demo-prompts.md)。
+> 播放器没出来可 [下载 mp4](./assets/demo-flint-echarts.mp4)；四幕演示脚本见 [demo-prompts.md](./demo-prompts.md)。
 
 ---
 

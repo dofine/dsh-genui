@@ -14,7 +14,8 @@ The model no longer just answers in text. Install this plugin, ask "how are this
 
 <div align="center">
 
-https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
+<video src="./assets/demo-flint-echarts.mp4" controls muted loop playsinline width="92%" poster="./assets/showcase-panel.png"></video>
+<br><em>ECharts + Flint chart nodes in action: the same data re-rendered as bar / line / pie by changing only the Flint <code>chartType</code>, with hover tooltips confined to the chart block.</em>
 
 </div>
 
@@ -23,7 +24,7 @@ https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
   <br><em>Real output: an interactive monitoring panel rendered by the model (click "refresh" and it regenerates the data)</em>
 </p>
 
-> Player won't load? [Download the mp4](./assets/demo.mp4). Four-act demo script: [demo-prompts.md](./demo-prompts.md).
+> Player won't load? [Download the mp4](./assets/demo-flint-echarts.mp4). Four-act demo script: [demo-prompts.md](./demo-prompts.md).
 
 ---
 
