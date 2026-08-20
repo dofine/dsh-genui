@@ -6,7 +6,8 @@
 
 本地 fork（未发布）：在 `omdsh-dev/dsh-genui` 上融合 **ECharts + Flint** 两个图表节点，白名单新增 `echarts` / `flint`。
 
-- **`echarts` 节点**：`{"type":"echarts","option":{...},"height":n?}` 直接内嵌原生 ECharts option；守卫 `sanitizeEchartsOption` 深拷贝剥离函数值、`formatter`/`renderItem` 等可执行字段，深度/节点数上限；渲染层统一注入 `tooltip.confine=true`（模型未显式指定时），并移除 `.echartsBox` 的 `overflow:hidden` 避免悬浮 tooltip 被裁剪。
+- **`echarts` 节点**：`{"type":"echarts","option":{...},"height":n?}` 直接内嵌原生 ECharts option；守卫 `sanitizeEchartsOption` 深拷贝剥离函数值、`formatter`/`renderItem` 等可执行字段，深度/节点数上限。
+- **tooltip 修复（两轮）**：① 移除 `.echartsBox` 的 `overflow:hidden`，渲染层统一注入 `tooltip.confine=true`（模型未显式指定时）；② 移除 `.echartsBox > * { width:100%; height:100% }` —— ECharts 把 tooltip DOM 直接 append 到 init 容器下且其 inline style 不设宽高，该子元素规则把 tooltip 盒子撑成整个图表大小（"tooltip 覆盖整张图"）；ECharts 自行管理 inner/canvas 尺寸，规则删除后 tooltip 恢复正常定位。
 - **`flint` 节点**：`{"type":"flint","input":{...}}` 承载 Flint `ChartAssemblyInput`（`data.values` + `semantic_types` + `chart_spec`），前端经 `flint-chart/echarts` 的 `assembleECharts` 编译为 ECharts option 再渲染；`repairFlintInput` 校验 `chartType` 存在并走同一 `sanitizeValue` 深拷贝。
 - **懒加载 asset**：`lib/assets/echarts.js`（~1.0MB）与 `lib/assets/flint.js`（~225KB）按需 script 注入，主 client bundle 保持轻量；`echarts.js` 加入 idle prefetch。
 - **依赖**：新增 `echarts@^5.5.0`、`flint-chart@^0.5.1`（均为 devDependencies，打入懒加载 asset，宿主零 chart 依赖）。

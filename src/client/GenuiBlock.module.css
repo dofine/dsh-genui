@@ -765,11 +765,16 @@
   background: var(--dsw-alias-bg-base, #17171a);
   /* No overflow: hidden — the ECharts tooltip is an absolutely-positioned
    * child of this container, and clipping it here truncates the hover
-   * tooltip at the block edge. The chart canvas fills the box exactly, so
-   * nothing spills visually except the (now confined) tooltip overlay. */
+   * tooltip at the block edge. ECharts sets the container's inline
+   * position to `relative` itself, so the tooltip positions correctly.
+   *
+   * IMPORTANT: do NOT re-add a blanket `.echartsBox > *` size rule. The
+   * tooltip DOM is appended directly under this container with no inline
+   * width/height (only position/top/left/z-index), so a `width:100%;
+   * height:100%` child rule inflates the tooltip box to cover the whole
+   * chart. ECharts sizes its inner div and canvases itself. */
   overflow: visible;
 }
-.echartsBox > * { width: 100%; height: 100%; }
 
 /* ---------- scene3d ---------- */
 
