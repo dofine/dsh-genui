@@ -37,7 +37,7 @@ function makeEnv(): Env {
     execFileSync('chmod', ['+x', join(bin, name)])
   }
   // simulated installed package (no exports map → legacy subpath resolve)
-  const pkg = join(profile, 'node_modules', '@omdsh-dev', 'dsh-genui')
+  const pkg = join(profile, 'node_modules', 'dsh-genui-charts')
   mkdirSync(pkg, { recursive: true })
   writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'dsh-genui-charts', version: '0.0.0-test' }))
   writeFileSync(join(pkg, 'SKILL.md'), PACKAGE_SKILL)
@@ -117,7 +117,7 @@ describe('install.sh skill sync safety', () => {
 
   it('skips a symlink that resolves to the same package file (dev ln -s case)', () => {
     const e = env()
-    const pkgSkill = join(e.profile, 'node_modules', '@omdsh-dev', 'dsh-genui', 'SKILL.md')
+    const pkgSkill = join(e.profile, 'node_modules', 'dsh-genui-charts', 'SKILL.md')
     mkdirSync(dirname(e.dest), { recursive: true })
     symlinkSync(pkgSkill, e.dest)
     const { status, stdout } = e.run()
@@ -160,7 +160,7 @@ describe('install.sh skill sync safety', () => {
 
   it('fails loudly when the installed package lacks SKILL.md (incomplete install)', () => {
     const e = env()
-    rmSync(join(e.profile, 'node_modules', '@omdsh-dev', 'dsh-genui', 'SKILL.md'))
+    rmSync(join(e.profile, 'node_modules', 'dsh-genui-charts', 'SKILL.md'))
     const { status, stdout } = e.run()
     expect(status).not.toBe(0)
     expect(stdout).toContain('无法定位已安装包内的 SKILL.md')

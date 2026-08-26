@@ -11,6 +11,7 @@ import {
   withCompactPie,
   withConfinedTooltip,
   withContainLabel,
+  withHostTheme,
 } from '../src/client/blocks/charts-extra.tsx'
 
 describe('withConfinedTooltip', () => {
@@ -91,5 +92,35 @@ describe('adaptChartOption', () => {
     expect(out.tooltip).toEqual({ confine: true })
     expect(out.grid).toEqual({ containLabel: true })
     expect((out.xAxis as Record<string, unknown>).axisLabel).toEqual({ interval: 'auto' })
+  })
+})
+
+describe('withHostTheme', () => {
+  it('injects host-theme defaults where the option is silent', () => {
+    const out = withHostTheme({})
+    expect(Array.isArray(out.color)).toBe(true)
+    expect(out.backgroundColor).toBe('transparent')
+    expect(out.textStyle).toMatchObject({ fontFamily: 'inherit', color: expect.any(String) })
+  })
+
+  it('keeps explicit model values', () => {
+    const out = withHostTheme({
+      color: ['#123456'],
+      backgroundColor: '#fff',
+      textStyle: { color: '#111', fontSize: 12 },
+    })
+    expect(out.color).toEqual(['#123456'])
+    expect(out.backgroundColor).toBe('#fff')
+    // Explicit color/fontSize survive; only the missing fontFamily is filled.
+    expect(out.textStyle).toEqual({ color: '#111', fontSize: 12, fontFamily: 'inherit' })
+  })
+
+  it('themes an existing tooltip without overriding its fields', () => {
+    const out = withHostTheme({ tooltip: { formatter: '{b}: {c}', backgroundColor: '#000' } })
+    const tooltip = out.tooltip as Record<string, unknown>
+    expect(tooltip.formatter).toBe('{b}: {c}')
+    expect(tooltip.backgroundColor).toBe('#000')
+    expect(typeof tooltip.borderColor).toBe('string')
+    expect((tooltip.textStyle as Record<string, unknown>).color).toEqual(expect.any(String))
   })
 })

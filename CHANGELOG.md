@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### echarts 补强：宿主主题适配 / 流式更新 / 渲染安全
+- **宿主主题适配**：`echarts` 节点的 raw option 在渲染前经 `withHostTheme` 注入宿主设计系统默认值——系列调色板来自 `CHART_COLORS` token（CSS 变量在 canvas 内不生效，渲染时解析为硬色值）、`backgroundColor: transparent`、`textStyle` 颜色/字体、tooltip 表面（背景/边框/文字色）。全部**默认值优先、显式值赢**，模型不必写颜色也能匹配宿主深色主题。
+- **流式更新**：`useEchartsChart` 拆成 mount / update 双 effect——mount 用 `optionRef` 取当前 option 初始化图表（引擎加载期间的 spec 更新不丢）；update 在 `option` 变化或引擎 `loading→ready` 时以 `setOption(option, true)`（notMerge）重放最新 option，流式渲染不再停留在旧图。
+- **渲染安全**：`sanitizeValue` 增加字符串注入过滤——含 HTML/脚本标签（`<script`/`<img … onerror>` 等）、`on[a-z]+=`、`javascript:`、`url(` 的字符串整体丢弃（顺带堵住 CSS 外带通道）；并强制每个 `tooltip` 对象 `renderMode: 'richText'`（ECharts 默认 `'html'` 模式经 innerHTML 写入 tooltip，是模型输出的 XSS 向量）。
+- **配套**：`echarts-lazy.ts` 的 `setOption` 签名支持 `notMerge`；`charts.tsx` 导出 `CHART_COLORS`；测试补充 `withHostTheme` 默认注入/显式优先、注入字符串过滤与 richText 断言。
+- **维护**：`install-script.spec.ts` 的模拟安装路径从旧包名 `@omdsh-dev/dsh-genui` 改为现包名 `dsh-genui-charts`（install.sh 按新包名解析，旧路径导致 8 个用例误判失败）；`pnpm run check` 顺序修正为「构建（tsdown）→ vitest」，install-script 用例需要 `lib/` 产物。
+
 ### 教学收敛：图表路径二选一（方案 B）
 
 - **模型面前只保留 `flint` + `echarts` 两条图表路径**：`chart`（上游自绘 bars/line/donut）从模型主动教学里降级——`SKILL.md` 词汇表、语法段与内容映射表、`GENUI_SECTION_TEXT` 全部移除 `chart` 条目；数据对比/趋势/占比的映射改为 `flint`、`table`。

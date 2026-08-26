@@ -470,9 +470,29 @@ describe('repairGenuiSpec: echarts / flint nodes', () => {
       ],
     })
     const node = spec!.items[0] as { option: Record<string, unknown> }
-    // formatter function dropped; the string-template formatter survives.
-    expect(node.option.tooltip).toEqual({})
+    // formatter function dropped; the surviving tooltip object is forced to
+    // richText (XSS posture); the string-template formatter survives.
+    expect(node.option.tooltip).toEqual({ renderMode: 'richText' })
     expect((node.option.series as Array<Record<string, unknown>>)[0]!.label).toEqual({ formatter: '{c}' })
+  })
+
+  it('drops strings with HTML/script injection patterns or url() from echarts options', () => {
+    const spec = repairGenuiSpec({
+      items: [
+        {
+          type: 'echarts',
+          option: {
+            tooltip: { formatter: '<img src=x onerror=alert(1)>' },
+            series: [{ type: 'bar', data: [1, 2], name: 'url(https://evil.example)' }],
+          },
+        },
+      ],
+    })
+    const node = spec!.items[0] as { option: Record<string, unknown> }
+    // The hostile formatter and the url() series name are dropped; the
+    // tooltip object survives with richText forced.
+    expect(node.option.tooltip).toEqual({ renderMode: 'richText' })
+    expect((node.option.series as Array<Record<string, unknown>>)[0]).toEqual({ type: 'bar', data: [1, 2] })
   })
 
   it('rejects an echarts node whose option is not a plain object', () => {

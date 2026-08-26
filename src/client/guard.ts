@@ -605,6 +605,16 @@ function repairSeries(v: unknown, cap: number, pointCap: number): Array<{ label:
 const ECHARTS_EXEC_KEYS = new Set(['formatter', 'formatterParams', 'renderItem', 'animationDelayUpdate'])
 
 /**
+ * Strings that ECharts renders through the HTML parser (tooltips, axis
+ * labels) must never carry markup or a script scheme: HTML/script tags,
+ * inline event handlers, and `javascript:` — plus `url(` which is the CSS
+ * exfiltration channel (a model could make the chart fetch an attacker-owned
+ * URL). A hit drops the value (field or array item), so hostile strings
+ * never reach the DOM.
+ */
+const ECHART_HTML_DANGER_RE = /<(?:script|img|svg|iframe|video|audio|object|embed|source)\b|on[a-z]+\s*=|javascript:/i
+
+/**
  * Deep-sanitize a model-authored ECharts `option` into plain JSON data only:
  * walk every object — dropping functions (which cannot survive JSON anyway,
  * but a hostile spec could reach repair through a non-JSON path), key names
@@ -636,7 +646,15 @@ function sanitizeValue(v: unknown, depth: number, budget: { nodes: number }): un
   if (budget.nodes >= MAX_OPTION_NODES) return undefined
   budget.nodes += 1
   if (depth > MAX_OPTION_DEPTH) return undefined
-  if (typeof v === 'string') return v.length > 4000 ? v.slice(0, 4000) : v
+  if (typeof v === 'string') {
+    const s = v.length > 4000 ? v.slice(0, 4000) : v
+    // Hostile strings must never reach an ECharts tooltip/label surface:
+    // HTML/script injection patterns and CSS url() (an exfiltration channel)
+    // drop the value wholesale. Plain labels and text-template formatters
+    // survive.
+    if (s.toLowerCase().includes('url(') || ECHART_HTML_DANGER_RE.test(s)) return undefined
+    return s
+  }
   if (typeof v === 'number') return Number.isFinite(v) && Math.abs(v) <= 1e15 ? v : 0
   if (typeof v === 'boolean') return v
   if (typeof v === 'function') return undefined
@@ -656,7 +674,15 @@ function sanitizeValue(v: unknown, depth: number, budget: { nodes: number }): un
       if (ECHARTS_EXEC_KEYS.has(k) && typeof val === 'function') continue
       if (ECHARTS_EXEC_KEYS.has(k) && typeof val !== 'string') continue
       const c = sanitizeValue(val, depth + 1, budget)
-      if (c !== undefined) out[k] = c
+      if (c !== undefined) {
+        if (k === 'tooltip' && c !== null && typeof c === 'object' && !Array.isArray(c)) {
+          // Force richText: ECharts' default 'html' tooltip mode writes
+          // content via innerHTML — an XSS vector when the option is model
+          // output. richText renders as text only, never through innerHTML.
+          (c as Record<string, unknown>).renderMode = 'richText'
+        }
+        out[k] = c
+      }
     }
     return out
   }

@@ -12,7 +12,7 @@ import { loadGenuiAsset } from './asset-loader.ts'
 /** The echarts engine surface registered by the echarts asset bundle. */
 export interface EchartsAssetApi {
   init: (dom: HTMLElement) => {
-    setOption: (option: Record<string, unknown>) => void
+    setOption: (option: Record<string, unknown>, notMerge?: boolean) => void
     resize: () => void
     dispose: () => void
   }

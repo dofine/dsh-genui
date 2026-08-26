@@ -1,24 +1,90 @@
 /**
  * ECharts / Flint chart renderers. Both render through the same lazy
  * echarts engine; the difference is the source of the `option`:
- * `EchartsNode` sets a model-authored option directly, while `FlintNode`
- * compiles a Flint `ChartAssemblyInput` to an option via the flint asset
- * before handing it to the engine. Both keep the deep-sanitized spec as the
- * only input — no HTML, no functions, no scripts — mirroring MermaidNode's
- * fallback-UI posture when an engine asset fails to load.
+ * `EchartsNode` sets a model-authored option directly (host-themed with
+ * default-only design tokens), while `FlintNode` compiles a Flint
+ * `ChartAssemblyInput` to an option via the flint asset before handing it to
+ * the engine. Both keep the deep-sanitized spec as the only input — no HTML,
+ * no functions, no scripts — mirroring MermaidNode's fallback-UI posture
+ * when an engine asset fails to load.
  * @module dsh-genui-charts/client/blocks/charts-extra
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../guard.ts'
 import { loadEcharts } from '../echarts-lazy.ts'
 import { compileFlintToEcharts } from '../flint-lazy.ts'
+import { CHART_COLORS } from './charts.tsx'
 import type { GenuiEcharts, GenuiFlint } from '../spec.ts'
 
 /** Cap the option height to the (guard-enforced) chart block ceiling. */
 function cappedHeight(height: number | undefined): number {
   const h = Math.floor(height ?? GENUI_LIMITS.maxChartHeight)
   return Math.max(80, Math.min(GENUI_LIMITS.maxChartHeight, h))
+}
+
+/* ---------------- host-theme defaults ---------------- */
+
+/** Fallback values for host design tokens when the CSS custom property is
+ * absent (jsdom tests, hosts without the design system). */
+const THEME_FALLBACKS = {
+  accent: '#4f8ef7',
+  labelPrimary: '#e6e6e6',
+  labelSecondary: '#a0a0a0',
+  border: 'rgba(255,255,255,0.12)',
+  bgLayer1: '#1a1a1e',
+} as const
+
+/** Read a CSS custom property from the document root (host theme token). */
+function readToken(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+
+/**
+ * Host-theme defaults for a model-authored ECharts option: resolve
+ * design-system tokens — the chart palette (CSS vars do not resolve
+ * inside an ECharts canvas, so they become hard colors), label colors, and the
+ * tooltip surface — and inject ONLY missing fields, so an explicit model value
+ * always wins. A raw option would otherwise render with ECharts' light-theme
+ * defaults on the host's dark surface.
+ */
+export function withHostTheme(option: Record<string, unknown>): Record<string, unknown> {
+  const bg = readToken('--dsw-alias-bg-layer-1', THEME_FALLBACKS.bgLayer1)
+  const tl = {
+    accent: readToken('--dsw-alias-state-business-primary', THEME_FALLBACKS.accent),
+    labelPrimary: readToken('--dsw-alias-label-primary', THEME_FALLBACKS.labelPrimary),
+    labelSecondary: readToken('--dsw-alias-label-secondary', THEME_FALLBACKS.labelSecondary),
+    border: readToken('--dsw-alias-border-l1', THEME_FALLBACKS.border),
+  }
+  let out = option
+  if (!Array.isArray(out.color)) {
+    out = { ...out, color: CHART_COLORS.map(c => readToken(c.replace('var(', '').replace(')', ''), tl.accent)) }
+  }
+  if (out.backgroundColor === undefined) out = { ...out, backgroundColor: 'transparent' }
+  const textStyle = isPlainObject(out.textStyle) ? out.textStyle : undefined
+  if (textStyle === undefined || textStyle.color === undefined || textStyle.fontFamily === undefined) {
+    out = {
+      ...out,
+      textStyle: {
+        ...(textStyle ?? {}),
+        ...(textStyle?.color !== undefined ? {} : { color: tl.labelSecondary }),
+        ...(textStyle?.fontFamily !== undefined ? {} : { fontFamily: 'inherit' }),
+      },
+    }
+  }
+  const tooltip = out.tooltip
+  if (isPlainObject(tooltip)) {
+    const themed: Record<string, unknown> = { ...tooltip }
+    if (themed.backgroundColor === undefined) themed.backgroundColor = bg
+    if (themed.borderColor === undefined) themed.borderColor = tl.border
+    const ttStyle = isPlainObject(themed.textStyle) ? themed.textStyle : undefined
+    if (ttStyle === undefined || ttStyle.color === undefined) {
+      themed.textStyle = { ...(ttStyle ?? {}), color: tl.labelPrimary }
+    }
+    out = { ...out, tooltip: themed }
+  }
+  return out
 }
 
 /**
@@ -123,51 +189,82 @@ export function adaptChartOption(option: Record<string, unknown>, containerWidth
 /**
  * Mount an echarts instance onto a div and drive it with `option`. Returns
  * the DOM node the effect lifecycle owns (echarts init/resize/dispose).
+ *
+ * Two effects split the lifecycle: a mount effect lazily loads the engine
+ * and initializes the chart with the CURRENT option (read through
+ * `optionRef`, so an option that lands while the engine loads is never
+ * applied stale), and owns resize + dispose; an update effect re-applies
+ * `setOption` whenever the option object changes or the engine transitions
+ * loading → ready, so streamed spec updates reach the canvas. `notMerge`
+ * replace semantics keep the chart on the latest model output instead of
+ * accumulating stale series.
  */
-function useEchartsChart(option: Record<string, unknown> | null, height: number): {
+function useEchartsChart(option: Record<string, unknown> | null): {
   ref: React.RefObject<HTMLDivElement>
   failed: boolean
 } {
   const ref = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
+  const [ready, setReady] = useState(false)
   const optionRef = useRef(option)
   optionRef.current = option
+  const chartRef = useRef<{ setOption: (o: Record<string, unknown>, notMerge?: boolean) => void; resize: () => void; dispose: () => void } | null>(null)
+
+  // Mount: create the chart; cleanup disposes. A height-only change never
+  // recreates the engine — the inline height style change is tracked by the
+  // ResizeObserver below.
   useEffect(() => {
     const dom = ref.current
-    if (dom === null || option === null) return
-    let chart: { setOption: (o: Record<string, unknown>) => void; resize: () => void; dispose: () => void } | undefined
+    if (dom === null) return
     let disposed = false
     void loadEcharts().then(({ init }) => {
       if (disposed) return
-      chart = init(dom)
+      const chart = init(dom)
       chart.setOption(adaptChartOption(optionRef.current ?? {}, dom.clientWidth))
+      chartRef.current = chart
+      setReady(true)
     }).catch(() => {
       if (!disposed) setFailed(true)
     })
     // Resize on window change keeps the canvas tracking its container.
-    const onResize = (): void => chart?.resize()
+    const onResize = (): void => chartRef.current?.resize()
     window.addEventListener('resize', onResize)
     // ResizeObserver additionally tracks the container itself: a grid column
     // or panel resize moves the block without a window resize.
     let observer: ResizeObserver | undefined
     if (typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(() => chart?.resize())
+      observer = new ResizeObserver(() => chartRef.current?.resize())
       observer.observe(dom)
     }
     return () => {
       disposed = true
       window.removeEventListener('resize', onResize)
       observer?.disconnect()
-      chart?.dispose()
+      chartRef.current?.dispose()
+      chartRef.current = null
     }
-  }, [option === null, height])
+  }, [option === null])
+
+  // Update: re-apply the latest option on every change (streaming re-renders)
+  // and when the engine becomes ready, so an option that arrived during
+  // engine load is applied instead of lost.
+  useEffect(() => {
+    if (!ready || option === null) return
+    const dom = ref.current
+    const chart = chartRef.current
+    if (dom === null || chart === null) return
+    chart.setOption(adaptChartOption(option, dom.clientWidth), true)
+  }, [option, ready])
+
   return { ref, failed }
 }
 
-/** Raw ECharts node: set the model-authored (sanitized) option directly. */
+/** Raw ECharts node: host-theme the model-authored (sanitized) option with
+ * default-only tokens, then set it directly. */
 export function EchartsNode({ node }: { node: GenuiEcharts }) {
   const height = cappedHeight(node.height)
-  const { ref, failed } = useEchartsChart(node.option, height)
+  const option = useMemo(() => withHostTheme(node.option), [node.option])
+  const { ref, failed } = useEchartsChart(option)
   if (failed) {
     return (
       <div className={css.mermaidFallback}>
@@ -214,7 +311,7 @@ export function FlintNode({ node }: { node: GenuiFlint }) {
 
 /** Inner renderer so the echarts mount effect keys on the resolved option. */
 function FlintRendered({ option, height }: { option: Record<string, unknown>; height: number }) {
-  const { ref, failed } = useEchartsChart(option, height)
+  const { ref, failed } = useEchartsChart(option)
   if (failed) {
     return (
       <div className={css.mermaidFallback}>

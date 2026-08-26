@@ -98,7 +98,7 @@
   "scripts": {
     "build": "rm -rf lib && tsc -p tsconfig.json && tsdown",
     "test": "vitest run",
-    "check": "rm -rf lib && tsc -p tsconfig.json && vitest run && tsdown",
+    "check": "rm -rf lib && tsc -p tsconfig.json && tsdown && vitest run",
     "prepack": "node scripts/prepack.mjs"
   },
   "dsh": {
