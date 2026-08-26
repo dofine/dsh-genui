@@ -8,6 +8,7 @@
 - **渲染安全**：`sanitizeValue` 增加字符串注入过滤——含 HTML/脚本标签（`<script`/`<img … onerror>` 等）、`on[a-z]+=`、`javascript:`、`url(` 的字符串整体丢弃（顺带堵住 CSS 外带通道）；并强制每个 `tooltip` 对象 `renderMode: 'richText'`（ECharts 默认 `'html'` 模式经 innerHTML 写入 tooltip，是模型输出的 XSS 向量）。
 - **配套**：`echarts-lazy.ts` 的 `setOption` 签名支持 `notMerge`；`charts.tsx` 导出 `CHART_COLORS`；测试补充 `withHostTheme` 默认注入/显式优先、注入字符串过滤与 richText 断言。
 - **维护**：`install-script.spec.ts` 的模拟安装路径从旧包名 `@omdsh-dev/dsh-genui` 改为现包名 `dsh-genui-charts`（install.sh 按新包名解析，旧路径导致 8 个用例误判失败）；`pnpm run check` 顺序修正为「构建（tsdown）→ vitest」，install-script 用例需要 `lib/` 产物。
+- **教学对齐（SKILL.md 契约修正）**：① action 规则收窄为「按钮必须带 action」，明确带 `group` 的 radio / 带 `answer` 的 submit / 无 action 的 quiz 走本地模式无需 action；② flint 补齐大表官方绑定 `data:{"url":"..."}`（不再只说「不要内联大表」）与 `height` 420px 上限；③ mermaid 白名单按 `mermaid-core` 全名列出（flowchart/graph/sequenceDiagram/…/gitGraph），并标注 `sequence`/`er` 等简称不被识别。
 
 ### 教学收敛：图表路径二选一（方案 B）
 

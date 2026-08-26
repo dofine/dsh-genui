@@ -49,12 +49,12 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 
 **决策规则**：数据可视化（对比/趋势/占比/分布…）**默认用 `flint`**；`echarts` 只用于 flint 目录没有的图（桑基/树图/日历热力/关系图…）或需要精细定制样式时；`plot` 只画数学函数曲线。
 
-- flint: `{"type":"flint","input":{"data":{"values":[...]},"semantic_types":{...},"chart_spec":{"chartType":"...","encodings":{...}}},"height":n?}` — 用 Flint 的语义规格画图：写 `chartType`（如 `"Bar Chart"`/`"Line Chart"`/`"Pie Chart"`/`"Scatter Plot"`/`"Heatmap"`…）+ `encodings`（通道→字段）+ `semantic_types`（字段→语义类型，如 Amount/Percentage/Date/Category/Quantity）+ 绑定 `data.values`（小表内联，大表需先转换）。前端用 `assembleECharts` 编译成 ECharts 渲染。语义类型决定格式化（货币/百分比/颜色/零基线）。**不要内联大表**；聚合/筛选/透视先上数据工具转换好再绑定。
+- flint: `{"type":"flint","input":{"data":{"values":[...]},"semantic_types":{...},"chart_spec":{"chartType":"...","encodings":{...}}},"height":n?}` — 用 Flint 的语义规格画图：写 `chartType`（如 `"Bar Chart"`/`"Line Chart"`/`"Pie Chart"`/`"Scatter Plot"`/`"Heatmap"`…）+ `encodings`（通道→字段）+ `semantic_types`（字段→语义类型，如 Amount/Percentage/Date/Category/Quantity）。**数据绑定二选一**：小表内联 `data:{"values":[...]}`；**大表改绑 `data:{"url":"..."}` 由宿主侧加载，绝不内联**——聚合/筛选/透视先上数据工具转换好再绑定。前端用 `assembleECharts` 编译成 ECharts 渲染；语义类型决定格式化（货币/百分比/颜色/零基线）。`height` 上限 420px（与 echarts 一致）。
 - echarts: `{"type":"echarts","option":{...},"height":n?}` — 直接内嵌原生 ECharts option（折线/柱状/饼/散点/热力/桑基等任意 ECharts 图），浏览器用 echarts 引擎渲染，支持悬浮 tooltip、缩放等交互。**只写声明式 JSON**：`formatter`/`renderItem` 等字段必须是字符串模板或纯数据，**绝不能写 JS 函数**（守卫会丢弃函数字段）；高度 `height` 上限 420px。**主题自动适配**：缺省的调色板/背景/文字色/tooltip 表面由宿主设计系统 token 按默认值补齐（你显式写的值永远优先），无需为深色主题手写颜色；工具提示固定按文本渲染。
 - plot: `{"type":"plot","series":[{"expr":"a*sin(b*x)","label":"...","color":"#hex?","params":[{"name":"a","value":1,"min":0,"max":5,"animateTo":3,"durationMs":4000,"loop":true},{"name":"b","value":1,"min":0.5,"max":5}]}],"xMin":-6.28,"xMax":6.28,"title":"..."}` — SVG 函数图；**series 可带 `"kind":"line|area|scatter"`**（缺省 line；area 填色到基线；scatter 散点）；**params 渲染成实时滑块**（拖动即时重绘，**y 轴锁定**=只变曲线不变数轴）；**animateTo 参数会显示播放按钮**（自动动画演示）；SVG 可拖拽平移、滚轮缩放；表达式支持 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x（其他字母=参数）
 
 ### 交互
-**本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。**交互组件必须带 action：不带 action 的按钮渲染为禁用态，用户点不了；带 action 的按钮点击后有「已触发」本地反馈。**
+**本地优先（v2.6）**：UI 自己能做的状态变化——判卷、判题、重置、展开、选中——一律本地即时完成，**零模型往返**。action 只用于必须模型参与的事（生成新内容、执行工具、下一步建议）。**按钮必须带 `action`**（不带 action 的按钮渲染为禁用态，用户点不了；带 action 的按钮点击后有「已触发」本地反馈）；**带 `group` 的 radio、带 `answer` 的 submit、不带 action 的 quiz 走本地模式，不需要 action**——给它们加 action 反而触发多余往返。
 - button: `{"type":"button","label":"...","tone":"primary|danger|success|ghost","full":true?,"small":true?,"icon":"emoji?","action":"refresh"?}`
 - **秘密禁令**：不得索取或生成密码、API Key、访问令牌、恢复码等秘密输入；遇到此类需求直接拒绝并解释
 - input: `{"type":"input","label":"...","placeholder":"...","inputType":"text|email","value":"...","action":"name"?,"id":"field-id"?}` — action 在失焦**和回车**时触发（回车带 `submit:true`）；**blur 仅值有变化才发送**（聚焦又离开不产生空往返）；payload 带 `id` 帮模型定位字段；带 `id` 的值刷新后保留、并被 submit 收集进 `fields`
@@ -75,7 +75,7 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 **卷子模式（多道选择题）**：每题一个 radio（带唯一 `group` + `answer` + `explanation`），最后放一个 submit（`groups` 列出全部题号）——用户全部选完点交卷，**分数和对错当场在 UI 里出现**，不用等你。只有换新题/进阶建议才发 action。不要每题单独发 action（会刷屏）。
 
 ### 高级
-- mermaid: `{"type":"mermaid","code":"graph TD\\nA-->B"}` — flowchart/sequence/class/gantt/pie/er/state/journey；主题自动跟随宿主（暗/浅）
+- mermaid: `{"type":"mermaid","code":"graph TD\nA-->B"}` — 白名单（**必须用全名**）：`flowchart`/`graph`/`sequenceDiagram`/`classDiagram`/`stateDiagram`/`gantt`/`pie`/`erDiagram`/`journey`/`gitGraph`，写成 `sequence`/`er` 等简称不被识别；主题自动跟随宿主（暗/浅）
 - scene3d: `{"type":"scene3d","title":"...","meshes":[{"shape":"box|sphere|cone|cylinder|torus","color":"#hex?","size":n|[w,h,d]?,"position":[x,y,z]?,"rotation":[rx,ry,rz]?,"scale":n?|[...]?}],"ambient":0-2?,"background":"#hex?"}` — 3D WebGL，可拖拽旋转、滚轮缩放；mesh 数量 1–5 个
 - quiz: `{"type":"quiz","question":"...","options":[{"label":"...","correct":true?,"feedback":"..."?}],"explanation":"...","id":"..."?,"action":"answer"?}` — 教学问答：点选即判题、可重试；`id` 变化时重置；带 action 时另回传 `{type:'quiz',question,answer,correct}`
 
