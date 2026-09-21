@@ -204,3 +204,22 @@ describe('sanitizeEChartOption: resource budget (via repairGenuiSpec)', () => {
     expect(node2?.option).toBeDefined()
   })
 })
+
+describe('repairGenuiSpec: legacy echarts alias', () => {
+  it('repairs the fork\'s old echarts node into an echart node with the same option', () => {
+    const spec = repairGenuiSpec({ items: [
+      { type: 'echarts', option: { series: [{ type: 'bar', data: [1, 2] }] }, height: 200 },
+    ] })!
+    expect(spec.items).toHaveLength(1)
+    expect(spec.items[0]).toMatchObject({
+      type: 'echart',
+      height: 200,
+      option: { series: [{ type: 'bar', data: [1, 2] }] },
+    })
+  })
+
+  it('drops a legacy echarts node whose option is not an object', () => {
+    const spec = repairGenuiSpec({ items: [{ type: 'echarts', option: [1, 2] }] })!
+    expect(spec.items).toHaveLength(0)
+  })
+})

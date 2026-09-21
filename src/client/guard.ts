@@ -723,6 +723,18 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
         ...opt('height', int(v.height, 100, 800)),
       }
     }
+    case 'echarts': {
+      // The fork's pre-0.12 node name for a raw ECharts option. Upstream's
+      // `echart` node owns that job now (same option, plus presets), so an old
+      // fence keeps rendering instead of degrading to a code block.
+      const option = obj(sanitizeEChartOption(v.option, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }))
+      if (option === undefined) return null
+      return {
+        type: 'echart',
+        ...opt('height', int(v.height, 100, 800)),
+        option,
+      }
+    }
     default:
       // Plugin-registered custom node types are opaque to the guard: pass
       // through unchanged (the renderer's default branch resolves them).
@@ -2051,6 +2063,26 @@ function validateNode(value: unknown, depth: number, at: string, errors: string[
       }
       isNum('height')
       break
+
+    case 'flint': {
+      // Flint needs its assembly input; the renderer (not this validator)
+      // reports a compile failure, so only the required root is checked here.
+      const input = obj(v.input)
+      const spec = input === undefined ? undefined : obj(input.chart_spec)
+      if (input === undefined) errors.push(`${at}: type 'flint' requires input (object)`)
+      else if (spec === undefined || str(spec.chartType, 128) === undefined) {
+        errors.push(`${at}: type 'flint' requires input.chart_spec.chartType (string)`)
+      }
+      isNum('height')
+      break
+    }
+
+    case 'echarts':
+      // Legacy fork node name: a raw option, still rendered as `echart`.
+      if (obj(v.option) === undefined) errors.push(`${at}: type 'echarts' requires option (object)`)
+      isNum('height')
+      break
+
     default:
       // Unknown type: plugin-registered custom nodes are valid when a
       // renderer exists; the guard cannot know, so report as a warning.

@@ -228,14 +228,14 @@ What you see: a themed bar chart with tooltips and axis labels — rendered by E
 
 The model writes the interface description as JSON inside a `dsh-ui` fence; the browser-side renderer (`src/client`) claims this language through the main repo's `fence-registry` interface and renders it. Components are whitelisted — the model can't smuggle in HTML/scripts; function expressions go through a standalone parser, never `eval`.
 
-The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, three.js, echarts, and flint engines are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
+The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, three.js, and echarts engines plus the flint assembler are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
 
 ## ❓ FAQ
 
 - **Rendering as a code block?** First check the browser console for `[genui] client active; fence-channel=registry|dom`. If absent, the client bundle was not activated even if its URL returns 200 — align the profile dependency, `package.json.name`, `cordis.patch.yml`, ModuleLoader id, and configured bundle name. If present, inspect the fence label/body; registry-less hosts automatically use the DOM channel.
 - **Chat UI goes blank when rendering a dsh-ui fence?** This plugin requires DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`.
 - **`dsh: pnpm not found on PATH`?** Install pnpm, then **open a new terminal** and retry (`corepack enable` or `npm i -g pnpm`).
-- **Installed but scene3d/mermaid/echarts don't render?** The engines (mermaid / three / echarts / flint) are not inlined in client.js — they load on demand the first time they're used (`/plugins/dsh-genui-charts/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, reinstall it (`dsh plugin --profile web remove dsh-genui-charts`, then `dsh plugin --profile web add github:dofine/dsh-genui`). Hosts without the asset routes degrade to source/load-error hints — update dsh.
+- **Installed but scene3d/mermaid/echarts don't render?** The engine assets (mermaid / three / echarts / flint) are not inlined in client.js — they load on demand the first time they're used (`/plugins/dsh-genui-charts/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, reinstall it (`dsh plugin --profile web remove dsh-genui-charts`, then `dsh plugin --profile web add github:dofine/dsh-genui`). Hosts without the asset routes degrade to source/load-error hints — update dsh.
 - **Model not outputting fences?** New sessions pick it up after a restart; or just say "output it with dsh-ui".
 - **Changed `src/` but DSH still runs the old code?** `lib/` is the committed build output a git install loads; run `pnpm build` and commit the rebuilt `lib/`. Forgetting the commit ships stale behaviour, and CI fails when `lib/` and a fresh build of `src/` diverge.
 

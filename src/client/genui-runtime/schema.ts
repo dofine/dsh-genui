@@ -305,6 +305,8 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
     oneOfRequired: [['option', 'data', 'series', 'links']],
     enums: { preset: ECHART_PRESETS },
   }),
+  // Legacy fork node name: a raw ECharts option, now repaired into `echart`.
+  echarts: schema(['option'], { ...nodeFields, option: 'object', height: 'number' }),
   'file-tree': schema(['items'], { ...nodeFields, items: 'array' }, { nodes: 'items' }, { nested: { items: fileTreeNodeSchema } }),
   flint: schema(['input'], { ...nodeFields, input: 'object', height: 'number' }),
   grid: schema(['items'], { ...nodeFields, cols: 'number', items: 'nodes' }),

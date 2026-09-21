@@ -234,14 +234,14 @@ dsh plugin --profile web add link:$PWD    # DSH 加载这份工作副本
 
 模型把界面描述写成 JSON 放进 `dsh-ui` 围栏，浏览器端渲染器（`src/client`）通过主仓 `fence-registry` 接口认领这门语言并渲染。组件是白名单的，模型塞不进 HTML/脚本；函数表达式走独立解析器，不用 eval。
 
-主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid、three.js、echarts 与 flint 引擎单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
+主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid、three.js、echarts 引擎与 flint 编译器单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
 
 ## ❓ 常见问题
 
 - **显示成代码块？** 先在浏览器控制台找 `[genui] client active; fence-channel=registry|dom`。没有这行，即使 `client.js` 返回 200，也只是下载了文件、没有激活：请对齐网页配置依赖名、`package.json.name`、`cordis.patch.yml`、ModuleLoader id 和配置中的 bundle 名。出现这行后再查围栏标签/正文；宿主没有 registry 时会自动走 DOM 通道。
 - **渲染 dsh-ui fence 时聊天界面白屏？** 本插件要求 DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`。
 - **`dsh: pnpm not found on PATH`？** 装 pnpm 后**新开终端**再试（`corepack enable` 或 `npm i -g pnpm`）。
-- **装了但 scene3d/mermaid/echarts 不渲染？** 引擎（mermaid / three / echarts / flint）不内联进 client.js——它们在首次用到时按需加载（`/plugins/dsh-genui-charts/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就重新装一次（`dsh plugin --profile web remove dsh-genui-charts`，再 `dsh plugin --profile web add github:dofine/dsh-genui`）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
+- **装了但 scene3d/mermaid/echarts 不渲染？** 引擎资产（mermaid / three / echarts / flint）不内联进 client.js——它们在首次用到时按需加载（`/plugins/dsh-genui-charts/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就重新装一次（`dsh plugin --profile web remove dsh-genui-charts`，再 `dsh plugin --profile web add github:dofine/dsh-genui`）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
 - **模型不主动输出？** 重启后新会话生效；或直接说"用 dsh-ui 输出"。
 - **改了 `src/` 但 DSH 还在跑旧代码？** `lib/` 是随仓库提交的构建产物，git 安装加载的就是它；跑一次 `pnpm build` 并提交重新构建的 `lib/`。忘了提交就会发出去旧行为，CI 也会在 `lib/` 与 `src/` 重新构建的结果不一致时失败。
 

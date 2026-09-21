@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { FlintNode } from '../src/client/FlintNode.tsx'
-import { repairGenuiSpec } from '../src/client/guard.ts'
+import { repairGenuiSpec, validateGenuiSpec } from '../src/client/guard.ts'
 import { compileFlintToEcharts } from '../src/client/flint-lazy.ts'
 import { createChart } from '../src/client/echarts-lazy.ts'
 import { t } from '../src/client/i18n/index.ts'
@@ -163,5 +163,18 @@ describe('repairGenuiSpec: flint', () => {
     }] })!
     const input = (spec.items[0] as { input: { options: { tooltip: { renderMode: string } } } }).input
     expect(input.options.tooltip.renderMode).toBe('richText')
+  })
+})
+
+describe('validateGenuiSpec: flint', () => {
+  it('accepts a valid flint node instead of reporting an unknown type', () => {
+    const result = validateGenuiSpec({ items: [{ type: 'flint', input: barInput }] })
+    expect(result.errors).toEqual([])
+    expect(result.ok).toBe(true)
+  })
+
+  it('reports the missing chart_spec rather than accepting an uncompilable node', () => {
+    const result = validateGenuiSpec({ items: [{ type: 'flint', input: { data: { values: [] } } }] })
+    expect(result.errors.join(' ')).toContain('input.chart_spec.chartType')
   })
 })
