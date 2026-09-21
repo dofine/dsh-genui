@@ -17,7 +17,7 @@ const WHITELISTED_COMPONENT_TYPES = [
   'text', 'row', 'col', 'grid', 'card',
   'button', 'input', 'textarea', 'select', 'checkbox', 'switch', 'slider', 'radio', 'submit', 'quiz', 'link',
   'badge', 'stat', 'progress', 'divider', 'spacer', 'list', 'table', 'audio', 'video',
-  'chart', 'tabs', 'accordion', 'avatar', 'plot', 'callout', 'steps',
+  'chart', 'flint', 'tabs', 'accordion', 'avatar', 'plot', 'callout', 'steps',
   'keyvalue', 'json', 'code', 'diff', 'copy',
   'mermaid', 'scene3d', 'timeline', 'file-tree', 'breadcrumb',
 ] as const
@@ -213,13 +213,13 @@ describe('genui:fence section', () => {
     })
 
     const first = await ctx.plugin(GenUI)
-    expect([...routes.keys()]).toEqual(['/plugins/@changfenhuang/dsh-genui/assets'])
+    expect([...routes.keys()]).toEqual(['/plugins/dsh-genui-charts/assets'])
 
     await first.dispose()
     expect(routes.size).toBe(0)
 
     const second = await ctx.plugin(GenUI)
-    expect([...routes.keys()]).toEqual(['/plugins/@changfenhuang/dsh-genui/assets'])
+    expect([...routes.keys()]).toEqual(['/plugins/dsh-genui-charts/assets'])
     await second.dispose()
     expect(routes.size).toBe(0)
   })
@@ -237,7 +237,7 @@ describe('genui:fence section', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(firstRoutes.get('/plugins/@changfenhuang/dsh-genui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
+      expect(firstRoutes.get('/plugins/dsh-genui-charts/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
     })
 
     await disposeFirstServer()
@@ -252,7 +252,7 @@ describe('genui:fence section', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(replacementRoutes.get('/plugins/@changfenhuang/dsh-genui/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
+      expect(replacementRoutes.get('/plugins/dsh-genui-charts/assets')).toEqual(expect.objectContaining({ kind: 'prefix' }))
     })
 
     await genui.dispose()

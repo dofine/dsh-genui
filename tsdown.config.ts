@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const ID = '@changfenhuang/dsh-genui'
+const ID = 'dsh-genui-charts'
 const PROJECT_ROOT = dirname(fileURLToPath(import.meta.url))
 
 /** Module-table entries this bundle may leave external: platform seed rows
@@ -191,4 +191,5 @@ export default [
   assetConfig('three', 'src/client/asset-three.ts'),
   assetConfig('echarts-core', 'src/client/asset-echarts-core.ts'),
   assetConfig('echarts-full', 'src/client/asset-echarts.ts'),
+  assetConfig('flint', 'src/client/asset-flint.ts'),
 ]

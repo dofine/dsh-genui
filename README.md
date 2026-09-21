@@ -1,4 +1,4 @@
-# 🎨 dsh-genui
+# 🎨 dsh-genui-charts
 
 <div align="center">
 
@@ -6,15 +6,44 @@
 
 <br>
 
-[**Open the live product site**](https://omdsh-dev.github.io/dsh-genui/) · [**Watch the real demo**](#watch-the-real-interface) · [**Install in DSH**](#quick-start)
+[**Repository**](https://github.com/dofine/dsh-genui) · [**Watch the real demo**](#watch-the-real-interface) · [**Install in DSH**](#quick-start)
 
 </div>
 
 > Give the model's answers a face — the text is still there, and an interactive UI is already live.
->
-> 🔌 Ecosystem: the repo carries the `#dsh` · `#dsh-plugin` topics — welcome to be listed by @dsh-plugin.
 
-`dsh-genui` turns a model reply into a **safe, interactive DSH surface**. Ask “how are this month’s orders doing?” and the answer can include a sortable data panel, a native video, a draggable plot, a local quiz, or a persistent session panel — without replacing the surrounding text.
+`dsh-genui-charts` turns a model reply into a **safe, interactive DSH surface**. Ask “how are this month’s orders doing?” and the answer can include a sortable data panel, a native video, a draggable plot, a local quiz, or a persistent session panel — without replacing the surrounding text.
+
+`dsh-genui-charts` is a fork of [`omdsh-dev/dsh-genui`](https://github.com/omdsh-dev/dsh-genui) (MIT): the component set, both rendering channels, and the packaging come from upstream, and this fork adds the `flint` chart node described next.
+
+## 🍴 What this fork adds
+
+Everything upstream ships is here; the fork's product-level addition is the **`flint` chart node**, now the default chart path. The model writes a declarative Flint `ChartAssemblyInput` — data, semantic types, and a chart spec — and the browser compiles it to ECharts:
+
+```dsh-ui
+{"type":"flint","input":{
+  "data":{"values":[{"month":"Jan","sales":128400},{"month":"Feb","sales":96000}]},
+  "semantic_types":{"month":"Month","sales":"Amount"},
+  "chart_spec":{"chartType":"Bar Chart","encodings":{"x":{"field":"month"},"y":{"field":"sales"}}}
+}}
+```
+
+| Field | What it carries |
+|---|---|
+| `input.data.values` | The inline rows the chart draws; aggregate or filter big tables before binding them here. |
+| `input.semantic_types` | Field → semantic type: `Amount` / `Percentage` / `Month` / `Category` / `Quantity`. The semantic types drive zero-baseline, axis formatting, and percentage labels, so a value is drawn for what it means. |
+| `input.chart_spec.chartType` | The Flint chart name (`"Bar Chart"`, `"Line Chart"`, `"Pie Chart"`, …): the same data becomes another chart by changing this one field. |
+| `input.chart_spec.encodings` | Channel → field bindings (`x`, `y`, `color`, `size`, …). |
+| `height` | Optional chart height in pixels (default 300). |
+
+The Flint assembler ships as its own lazy asset (`lib/assets/flint.js`), fetched through the plugin's own HTTP route the first time it is needed: it requires no extra install command, and a conversation without a `flint` node never downloads it. A failed compile or a missing asset degrades that one block to an error hint instead of breaking the fence.
+
+The upstream chart nodes stay in place, and the split is deliberate:
+
+- **`flint`** — the default: you state the data and what each field *means*.
+- **`echart`** — the escape hatch: presets (`bar`, `line`, `area`, `pie`, `scatter`, `radar`, `gauge`, `funnel`, `treemap`, `sankey`, `graph`, `heatmap`, `bigline`, `wordCloud`), plus a full raw `option` mode for ECharts features Flint does not express.
+- **`chart`** — the lightweight built-in SVG renderer (`bars` / `line` / `donut`) for small series (≤8 points), with no chart engine involved.
+- **`plot`** — function plots, redrawn locally as their parameter sliders move.
 
 ## Start with the evidence
 
@@ -22,12 +51,12 @@
 |---|---|---|
 | See the complete DSH flow first | [40-second real walkthrough](#40-second-walkthrough) | Components are rendered inside a real DSH conversation. |
 | Inspect concrete UI outputs | [Three real outputs](#three-real-outputs-inside-a-dsh-reply) | Monitoring, function plots, and composable layout primitives. |
-| Try it in your own DSH | [Quick start](#quick-start) | A public npm install, a prompt to run, and an activation check. |
+| Try it in your own DSH | [Quick start](#quick-start) | A one-command GitHub install, a prompt to run, and an activation check. |
 | Learn the JSON language | [Component syntax](./SKILL.md) | The supported, guarded `dsh-ui` component specification. |
 
 ## Watch the real interface
 
-> **No concept mockups.** The recording and images in this section are captured from `dsh-genui` rendering in the DSH interface. Use them to see the actual visual language before installing.
+> **No concept mockups.** The recording and images in this section are captured from `dsh-genui-charts` rendering in the DSH interface. Use them to see the actual visual language before installing.
 
 ### 40-second walkthrough
 
@@ -84,7 +113,7 @@ The repository ships both renderer channels, the host plugin, and the built brow
 
 ## ✨ Before vs. after
 
-| Plain answer | With dsh-genui |
+| Plain answer | With dsh-genui-charts |
 |---|---|
 | "Revenue this month: ¥128,430, +12.4% MoM — watch the conversion rate." | One line of analysis + three stat cards (revenue / orders / conversion), a trend chart, and a progress bar rendered right beside it |
 | Want to see more? Type another question. | The panel already has "Refresh" / "Switch view" buttons — click, and the model updates the data |
@@ -93,36 +122,19 @@ The repository ships both renderer channels, the host plugin, and the built brow
 
 Prerequisites — all required:
 
-1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`** (dsh-genui 0.11.1-preview.2 is verified on DSH 0.1.6-alpha.1 and the 0.1.2-rc.1 minimum; users on DSH `<=0.1.1-rc.x` should use dsh-genui `0.9.8`)
+1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`**
 2. **`pnpm` on your PATH**: the `dsh plugin` command depends on it. If missing: `corepack enable` (or `npm i -g pnpm`), then **open a new terminal** and confirm `pnpm -v` prints a version
 
 Install and activate in DSH (one command, all dependencies included):
 
 ```sh
-# Public npm package (works without an npm account)
-dsh plugin --profile web add @changfenhuang/dsh-genui
+# Git install: fetches this repository — no registry, no build
+dsh plugin --profile web add github:dofine/dsh-genui
 ```
 
-To add it only as a Node dependency in an existing project:
+`lib/` ships inside this repository, so a git install needs **no build step** and no pnpm build-script approval: the install loads the build output exactly as committed.
 
-```sh
-npm install @changfenhuang/dsh-genui
-```
-
-> `npm install` only adds the dependency; it does not register the plugin with DSH. Use `dsh plugin add` above when installing it into DSH.
-
-> ⚠️ **Don't use `link:` on a freshly cloned directory** — `link:` does not install the plugin's dependencies (mermaid / three / react), so the renderer will break. Use the npm command above for normal installation; reserve `link:` for local development iteration (see below).
-
-### Migrating from the old `@omdsh-dev` package name
-
-If you installed from `github:omdsh-dev/dsh-genui` before v0.9.2, pnpm may keep the dependency under the old `@omdsh-dev/dsh-genui` key even though the repository now declares `@changfenhuang/dsh-genui`. The loader resolves plugins from the profile's dependency keys, so a later reinstall can then fail with `Cannot find package '@changfenhuang/dsh-genui'`. Re-add the plugin under its current package name:
-
-```sh
-dsh plugin --profile web remove @omdsh-dev/dsh-genui
-dsh plugin --profile web add @changfenhuang/dsh-genui
-```
-
-This migration is required once for old GitHub-spec installs. New installs should use the npm command above and will use the current dependency key.
+> ⚠️ **Don't use `link:` on a freshly cloned directory** — `link:` does not install the plugin's dependencies (mermaid / three / react), so the renderer will break. Use the GitHub command above for normal installation; reserve `link:` for iterating on a working copy (below), where `pnpm install` runs first.
 
 ### Verify the install in 60 seconds
 
@@ -134,19 +146,23 @@ Use dsh-ui to draw a stats dashboard with a sortable service table.
 
 You should see the reply turn into an in-place dashboard rather than a code block. For an unambiguous technical check, open the browser console: successful activation prints `[genui] client active; fence-channel=registry|dom`.
 
-### Developer iteration (link mode)
+### Local development (working copy)
 
 ```sh
+git clone https://github.com/dofine/dsh-genui.git
 cd dsh-genui
-pnpm install
-dsh plugin --profile web add link:$PWD
+pnpm install                              # the plugin's own dependencies
+pnpm build                                # rebuild lib/ from src/
+dsh plugin --profile web add link:$PWD    # DSH loads this working copy
 ```
+
+`link:` points DSH at your working copy, so it runs the **built** output: after any `src/` change, run `pnpm build` again and commit the rebuilt `lib/` in the same commit — a git install serves exactly what the repository contains, and CI fails when the committed `lib/` and a fresh build of `src/` diverge.
 
 ## 🧩 Capability map
 
 | Surface | First thing to try | Observable behavior |
 |---|---|---|
-| Data | Ask for an order or service dashboard | `stat`, `table`, `chart`, and `progress` appear inside the reply; supported numeric table values sort numerically. |
+| Data | Ask for a trend or an order dashboard | `stat`, `table`, `flint` (default), `chart`, and `progress` appear inside the reply; supported numeric table values sort numerically. |
 | Media | Ask for an audio or video reference | Browser-reachable media plays inline, with poster/aspect-ratio and failure states. |
 | Exploration | Ask for `plot` with a parameter | Dragging sliders redraws the curve locally and immediately. |
 | Feedback | Ask for a short quiz | The UI grades and explains locally; only the next model step needs an `action`. |
@@ -157,6 +173,7 @@ The following is the detailed capability reference. Every behavior is constraine
 - **Answer-as-UI**: components are embedded in the reply and appear as they stream — no waiting for the whole message
 - **30+ components**: cards, tables, charts, forms, tabs, accordions, file trees, timelines, diffs…
 - **Native media**: audio and video play inline from browser-reachable http(s) or same-origin relative URLs, with user-controlled playback, video posters/aspect ratios, and visible failure states
+- **Flint charts (default)**: the `flint` node takes a declarative Flint `ChartAssemblyInput` and the browser compiles it to ECharts, with semantic types driving zero-baseline, axis formatting, and percentage labels. The assembler is a lazy asset (`lib/assets/flint.js`); see **What this fork adds** above for the node's fields and the split against `echart` / `chart`.
 - **ECharts integration**: the `echart` node renders full ECharts charts with theme-aware colors, tooltips, and legends. Two modes: **preset shorthand** (`preset: 'bar' | 'line' | 'area' | 'pie' | 'scatter'` + `data`/`series`) for quick upgrade from the `chart` node, or **full option** (`option` field) for custom chart types, dataZoom, visualMap, and other advanced ECharts features. The echarts engine (~1 MB) is lazy-loaded on demand — the main bundle never carries it, and conversations without `echart` nodes never download it- **Function plots**: `plot` draws curves; parameter sliders redraw in real time, with optional auto-animation
 
 - **Quiz**: `quiz` grades on click with explanation and retry; with `action`, the answer is also sent back to the model (grading stays local and instant)
@@ -211,17 +228,16 @@ What you see: a themed bar chart with tooltips and axis labels — rendered by E
 
 The model writes the interface description as JSON inside a `dsh-ui` fence; the browser-side renderer (`src/client`) claims this language through the main repo's `fence-registry` interface and renders it. Components are whitelisted — the model can't smuggle in HTML/scripts; function expressions go through a standalone parser, never `eval`.
 
-The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, three.js, and echarts engines are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
+The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, three.js, echarts, and flint engines are bundled separately as on-demand assets (loaded through the plugin's self-registered HTTP routes the first time they're used), so startup only downloads the rendering core.
 
 ## ❓ FAQ
 
 - **Rendering as a code block?** First check the browser console for `[genui] client active; fence-channel=registry|dom`. If absent, the client bundle was not activated even if its URL returns 200 — align the profile dependency, `package.json.name`, `cordis.patch.yml`, ModuleLoader id, and configured bundle name. If present, inspect the fence label/body; registry-less hosts automatically use the DOM channel.
-- **Chat UI goes blank when rendering a dsh-ui fence?** This dsh-genui release requires DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`; users on DSH `<=0.1.1-rc.x` should use dsh-genui `0.9.8`.
+- **Chat UI goes blank when rendering a dsh-ui fence?** This plugin requires DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`.
 - **`dsh: pnpm not found on PATH`?** Install pnpm, then **open a new terminal** and retry (`corepack enable` or `npm i -g pnpm`).
-- **npm install returns 404?** The npm package is public and requires no login. Run `npm view @changfenhuang/dsh-genui version` to verify the package name and public registry; if a newly published version still returns 404, retry shortly.
-- **Installed but scene3d/mermaid/echarts don't render?** The engines (mermaid / three / echarts) are no longer inlined in client.js — they load on demand the first time they're used (`/plugins/@changfenhuang/dsh-genui/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, remove and reinstall (`dsh plugin --profile web remove @changfenhuang/dsh-genui`, then add again). Hosts without the asset routes degrade to source/load-error hints — update dsh.
+- **Installed but scene3d/mermaid/echarts don't render?** The engines (mermaid / three / echarts / flint) are not inlined in client.js — they load on demand the first time they're used (`/plugins/dsh-genui-charts/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, reinstall it (`dsh plugin --profile web remove dsh-genui-charts`, then `dsh plugin --profile web add github:dofine/dsh-genui`). Hosts without the asset routes degrade to source/load-error hints — update dsh.
 - **Model not outputting fences?** New sessions pick it up after a restart; or just say "output it with dsh-ui".
-- **No lib/ after cloning?** Build it yourself: `pnpm install && pnpm run check`.
+- **Changed `src/` but DSH still runs the old code?** `lib/` is the committed build output a git install loads; run `pnpm build` and commit the rebuilt `lib/`. Forgetting the commit ships stale behaviour, and CI fails when `lib/` and a fresh build of `src/` diverge.
 
 ## 🧑‍💻 Development
 

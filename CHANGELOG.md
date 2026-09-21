@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0-charts.1] — fork 迁移到上游新基线
+
+### 变更
+- **基线换成上游 `omdsh-dev/dsh-genui` 当前 main（0.11.1-preview.2 之后）**：本 fork 此前停在上游 8 月中旬的一个旧基线上，这次把上游 277 个提交整批接入——宿主兼容（dsh 0.1.2-rc.1 / 0.1.5-alpha.1 / 0.1.6-alpha.1 的包名与 API 迁移、按宿主插件规范导出 `name`、工具与 assets 路由挂到 `ctx.inject` + `ctx.effect` 依赖 fiber、`ctx.skills.registerProvider` 内置注册 genui skill）、围栏与流式正确性（部分围栏渲染、settle 后保留流式内容与交互、字段别名归一化、逐节点丢弃归因、可见诊断）、行内富文本与公式、i18n 词典、模板中心与成就页、svg/image/diagram 等新组件，以及上游的完整测试与 CI 矩阵。
+- **包名与仓库身份**：包名统一为 `dsh-genui-charts`（模块 id、`cordis.patch.yml` 行名、assets 路由前缀、JSDoc `@module` 全部同步），仓库指回 `dofine/dsh-genui`；版本号改为 `0.12.0-charts.1`，用上游版本号做基线标识。
+- **安装方式保持 git 源码安装**：`dsh plugin --profile web add github:dofine/dsh-genui`。`lib/` 仍然提交进仓库（上游已改为只发 npm 并停止跟踪 lib），所以 git 安装既不需要构建、也不需要 pnpm 的构建脚本授权；CI 增加 lib 与 src 的漂移校验。
+- 上游只服务于其 npm 发布与产品站的 workflow（`release.yml`、`deploy-product-site.yml`）已删除；`scripts/install.sh` 改为从 GitHub 安装，不再复制 skill 文件（skill 现由插件在运行时注册）。
+
+### 新增
+- **`flint` 图表节点**：`{"type":"flint","input":{...}}` 用 Flint 的语义规格画图——`chart_spec.chartType` + `encodings`（通道→字段）+ `semantic_types`（字段→语义类型）由前端编译成 ECharts option，语义类型决定零基线、坐标轴格式化与百分比标签；`lib/assets/flint.js` 按需加载，只有出现 flint 节点才会下载。这是本 fork 的图表默认路径，`chart`（内置 SVG）、`echart`（上游的预设与原生 option 逃生舱）、`plot`（函数图）继续可用。
+- flint 节点的守卫按 ECharts 同级净化：字符串里的 HTML/脚本模式与 `url(` 会被丢弃，`tooltip.renderMode` 强制 `richText`，深度与节点数有预算；编译失败或引擎缺失时该块降级为错误提示，不拖垮整条围栏。
+
 ## [Unreleased]
 
 ### 新增

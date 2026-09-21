@@ -1,6 +1,8 @@
 node_modules/
 *.tsbuildinfo
-lib/
+# lib/ IS tracked in this fork: the plugin is installed straight from GitHub
+# (`dsh plugin add github:dofine/dsh-genui`), which fetches sources and never
+# runs a build — so the committed build output is what users load.
 .e2e-artifacts/
 .e2e-artifacts-*/
 .playwright-cli/

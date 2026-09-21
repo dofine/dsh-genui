@@ -1,4 +1,4 @@
-# 🎨 dsh-genui
+# 🎨 dsh-genui-charts
 
 <div align="center">
 
@@ -6,15 +6,44 @@
 
 <br>
 
-[**打开在线产品站**](https://omdsh-dev.github.io/dsh-genui/) · [**看真实演示**](#观看真实界面) · [**安装到 DSH**](#-快速开始)
+[**仓库地址**](https://github.com/dofine/dsh-genui) · [**看真实演示**](#观看真实界面) · [**安装到 DSH**](#-快速开始)
 
 </div>
 
 > 让模型的回答长出界面——文字还在，可交互的 UI 已经能用。
->
-> 🔌 生态：仓库已挂 `#dsh` · `#dsh-plugin` topic，欢迎 @dsh-plugin 收录。
 
-`dsh-genui` 把模型回答变成**安全、可交互的 DSH 界面**。你问「这个月订单怎么样」，回答除了文字，还可以直接带上可排序的数据面板、原生音视频、可拖动的函数图、本地判题或常驻会话面板。
+`dsh-genui-charts` 把模型回答变成**安全、可交互的 DSH 界面**。你问「这个月订单怎么样」，回答除了文字，还可以直接带上可排序的数据面板、原生音视频、可拖动的函数图、本地判题或常驻会话面板。
+
+`dsh-genui-charts` 是 [`omdsh-dev/dsh-genui`](https://github.com/omdsh-dev/dsh-genui)（MIT）的 fork：组件集、两套渲染通道与打包方式都来自上游，本 fork 增加的是下面这个 `flint` 图表节点。
+
+## 🍴 这个 fork 增加了什么
+
+上游的能力这里都有；本 fork 的产品级新增是 **`flint` 图表节点**，也是现在的图表默认路径。模型写一份声明式的 Flint `ChartAssemblyInput`（数据 + 语义类型 + 图表规格），浏览器把它编译成 ECharts：
+
+```dsh-ui
+{"type":"flint","input":{
+  "data":{"values":[{"month":"1月","sales":128400},{"month":"2月","sales":96000}]},
+  "semantic_types":{"month":"Month","sales":"Amount"},
+  "chart_spec":{"chartType":"Bar Chart","encodings":{"x":{"field":"month"},"y":{"field":"sales"}}}
+}}
+```
+
+| 字段 | 装什么 |
+|---|---|
+| `input.data.values` | 直接画的小表；大表先聚合/筛选好再绑定。 |
+| `input.semantic_types` | 字段 → 语义类型：`Amount` 金额 / `Percentage` 百分比 / `Month` 时间 / `Category` 类别 / `Quantity` 数量。语义类型决定零基线、坐标轴格式化与百分比标签，数字按它的含义来画。 |
+| `input.chart_spec.chartType` | Flint 图表名（`"Bar Chart"`、`"Line Chart"`、`"Pie Chart"` …）：同一份数据改这一个字段就能换图。 |
+| `input.chart_spec.encodings` | 通道 → 字段绑定（`x`、`y`、`color`、`size` …）。 |
+| `height` | 可选图表高度（像素，缺省 300）。 |
+
+Flint 编译器单独打包为按需资产（`lib/assets/flint.js`），首次用到时经插件自带的 HTTP 路由加载：不需要额外安装命令，没有 `flint` 节点的对话也不会下载它。编译失败或资产缺失时，只有这一块降级为错误提示，围栏其余部分照常渲染。
+
+上游的图表节点原样保留，分工是明确的：
+
+- **`flint`** —— 默认路径：只说数据，以及每个字段**是什么意思**。
+- **`echart`** —— 逃生舱：预设（`bar`、`line`、`area`、`pie`、`scatter`、`radar`、`gauge`、`funnel`、`treemap`、`sankey`、`graph`、`heatmap`、`bigline`、`wordCloud`）加完整原生 `option` 模式，Flint 表达不了的 ECharts 能力走这里。
+- **`chart`** —— 内置 SVG 轻量渲染器（`bars` / `line` / `donut`），适合小数据（≤8 点），不牵扯任何图表引擎。
+- **`plot`** —— 函数图，拖动参数滑块即时重绘。
 
 ## 先看真实证据
 
@@ -22,12 +51,12 @@
 |---|---|---|
 | 先看完整 DSH 流程 | [40 秒真实录屏](#40-秒完整演示) | 组件确实出现在 DSH 的真实对话里。 |
 | 看具体界面是什么样 | [三类真实输出](#一条-dsh-回答里的三类真实输出) | 监控、函数绘图和可组合的布局组件。 |
-| 立刻在自己的 DSH 里试 | [快速开始](#-快速开始) | npm 公开包安装、验证提示词与激活检查。 |
+| 立刻在自己的 DSH 里试 | [快速开始](#-快速开始) | 一行 GitHub 安装命令、验证提示词与激活检查。 |
 | 学会 JSON 界面描述 | [组件语法](./SKILL.md) | 受白名单约束的 `dsh-ui` 组件规范。 |
 
 ## 观看真实界面
 
-> **不是概念图。** 本节的录屏与截图均来自 `dsh-genui` 在 DSH 界面中的实际渲染；先看它真正长什么样，再决定是否安装。
+> **不是概念图。** 本节的录屏与截图均来自 `dsh-genui-charts` 在 DSH 界面中的实际渲染；先看它真正长什么样，再决定是否安装。
 
 ### 40 秒完整演示
 
@@ -84,7 +113,7 @@ https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
 
 ## ✨ 装之前 vs 装之后
 
-| 普通回答 | 装了 dsh-genui |
+| 普通回答 | 装了 dsh-genui-charts |
 |---|---|
 | "本月收入 ¥128,430，环比 +12.4%，建议关注转化率。" | 一行分析 + 旁边直接渲染：收入/订单/转化率三张统计卡、趋势图、进度条 |
 | 想再看别的？再打一段字问一遍 | 面板上就有「刷新」「切换视图」按钮，点一下，模型更新数据 |
@@ -93,36 +122,19 @@ https://github.com/user-attachments/assets/f5db33ec-7471-4d4a-a85b-79c9962ab4ef
 
 前置条件，缺一不可：
 
-1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`**（dsh-genui 0.11.1-preview.2 已验证 DSH 0.1.6-alpha.1，并保留 0.1.2-rc.1 下限验证；使用 DSH `<=0.1.1-rc.x` 的用户请使用 dsh-genui `0.9.8`）
+1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`**
 2. **`pnpm` 在 PATH 上**：`dsh plugin` 命令依赖它。没有就 `corepack enable`（或 `npm i -g pnpm`），然后**新开一个终端**，确认 `pnpm -v` 有输出
 
 安装并在 DSH 中激活（一行命令，自动带上全部依赖）：
 
 ```sh
-# npm 公开包安装（无需 npm 账号）
-dsh plugin --profile web add @changfenhuang/dsh-genui
+# GitHub 安装：直接取本仓库源码，不走 npm、不用构建
+dsh plugin --profile web add github:dofine/dsh-genui
 ```
 
-如果只想把它作为 Node 依赖加入现有项目：
+`lib/` 随仓库一起提交，所以 git 安装**不需要构建步骤**，也不需要批准 pnpm 的构建脚本：装到的就是你 commit 的构建产物。
 
-```sh
-npm install @changfenhuang/dsh-genui
-```
-
-> `npm install` 只添加依赖，不会把插件注册到 DSH；在 DSH 中使用时仍应执行上面的 `dsh plugin add`。
-
-> ⚠️ **别用 `link:` 装一个刚 clone 的目录**——`link:` 不会安装插件的依赖（mermaid / three / react），装完渲染器会挂。正常安装请使用上面的 npm 命令；只有本地开发迭代才用 `link:`（见下文）。
-
-### 从旧 `@omdsh-dev` 包名迁移
-
-如果你在 v0.9.2 之前通过 `github:omdsh-dev/dsh-genui` 安装过，pnpm 可能仍把依赖保存在旧的 `@omdsh-dev/dsh-genui` 键下，但仓库当前声明的包名已经是 `@changfenhuang/dsh-genui`。加载器按 profile 的依赖键解析插件，后续重装时就可能报 `Cannot find package '@changfenhuang/dsh-genui'`。请用当前包名重新添加一次：
-
-```sh
-dsh plugin --profile web remove @omdsh-dev/dsh-genui
-dsh plugin --profile web add @changfenhuang/dsh-genui
-```
-
-这次迁移只针对改名前留下的 GitHub 源安装。此后新装统一使用上面的 npm 命令，并采用当前依赖键。
+> ⚠️ **别用 `link:` 装一个刚 clone 的目录**——`link:` 不会安装插件的依赖（mermaid / three / react），装完渲染器会挂。正常安装请使用上面的 GitHub 命令；`link:` 只用于在工作副本上迭代（见下文，那里会先跑 `pnpm install`）。
 
 ### 60 秒验证安装
 
@@ -134,19 +146,23 @@ dsh plugin --profile web add @changfenhuang/dsh-genui
 
 正常情况下，回答会原地变成仪表盘，而不是显示成代码块。想做最明确的技术确认时，打开浏览器控制台：成功激活会打印 `[genui] client active; fence-channel=registry|dom`。
 
-### 开发者迭代（link 模式）
+### 本地开发（工作副本）
 
 ```sh
+git clone https://github.com/dofine/dsh-genui.git
 cd dsh-genui
-pnpm install
-dsh plugin --profile web add link:$PWD
+pnpm install                              # 装插件自己的依赖
+pnpm build                                # 从 src/ 重新构建 lib/
+dsh plugin --profile web add link:$PWD    # DSH 加载这份工作副本
 ```
+
+`link:` 让 DSH 直接加载你的工作副本，跑的是**构建产物**：改了 `src/` 就要再跑一次 `pnpm build`，并把重新构建的 `lib/` 一起提交（同一个 commit）——git 安装拿到的就是仓库里 commit 的内容，CI 也会在 `lib/` 与 `src/` 重新构建的结果不一致时失败。
 
 ## 🧩 能力地图
 
 | 界面方向 | 第一次怎么试 | 可以直接观察到的行为 |
 |---|---|---|
-| 数据 | 让它做订单或服务监控看板 | `stat`、`table`、`chart`、`progress` 直接出现；已支持的数值表格按数值排序。 |
+| 数据 | 让它做趋势图或订单看板 | `stat`、`table`、`flint`（默认）、`chart`、`progress` 直接出现；已支持的数值表格按数值排序。 |
 | 媒体 | 让它引用一段音频或视频 | 浏览器可访问的媒体直接内嵌播放，带封面/比例和失败状态。 |
 | 探索 | 让它用 `plot` 画带参数的函数 | 拖动滑块，本地立即重绘曲线。 |
 | 反馈 | 让它出一道小测 | 判题和解析在本地完成；需要模型参与的下一步才使用 `action`。 |
@@ -157,6 +173,7 @@ dsh plugin --profile web add link:$PWD
 - **回答即界面**：组件嵌在回答里，边生成边出现，不用等整段写完
 - **30+ 组件**：卡片、表格、图表、表单、标签页、折叠面板、文件树、时间线、diff……
 - **原生音视频**：浏览器可访问的 http(s) 或同源相对地址直接嵌入回答；用户主动控制播放，视频支持封面与画面比例，失败时原位提示
+- **Flint 图表（默认）**：`flint` 节点接收声明式的 Flint `ChartAssemblyInput`，浏览器编译成 ECharts；语义类型决定零基线、坐标轴格式化与百分比标签。编译器是按需资产（`lib/assets/flint.js`），节点字段与 `echart`/`chart` 的分工见上文「这个 fork 增加了什么」。
 - **ECharts 集成**：`echart` 节点渲染完整的 ECharts 图表，自动适配主题色、提示框和图例。两种模式：**预设简写**（`preset: 'bar' | 'line' | 'area' | 'pie' | 'scatter'` + `data`/`series`）可从 `chart` 节点快速升级；**完整选项**（`option` 字段）支持自定义图表类型、dataZoom、visualMap 等高级 ECharts 功能。echarts 引擎（~1 MB）按需懒加载——主包不含引擎，没有 `echart` 节点的对话不会下载它- **函数图**：`plot` 画曲线，参数滑块拖动实时重绘，支持自动动画
 
 - **测验**：`quiz` 点选判题 + 解析 + 重试；带 `action` 时答案同时回传模型（判题仍本地即时）
@@ -217,27 +234,26 @@ dsh plugin --profile web add link:$PWD
 
 模型把界面描述写成 JSON 放进 `dsh-ui` 围栏，浏览器端渲染器（`src/client`）通过主仓 `fence-registry` 接口认领这门语言并渲染。组件是白名单的，模型塞不进 HTML/脚本；函数表达式走独立解析器，不用 eval。
 
-主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid、three.js 与 echarts 引擎单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
+主渲染包保持轻量（≈110 KB min / 28 KB gzip），mermaid、three.js、echarts 与 flint 引擎单独打包为按需资产（首次用到时经插件自注册的 HTTP 路由加载），启动时只下载渲染核心。
 
 ## ❓ 常见问题
 
 - **显示成代码块？** 先在浏览器控制台找 `[genui] client active; fence-channel=registry|dom`。没有这行，即使 `client.js` 返回 200，也只是下载了文件、没有激活：请对齐网页配置依赖名、`package.json.name`、`cordis.patch.yml`、ModuleLoader id 和配置中的 bundle 名。出现这行后再查围栏标签/正文；宿主没有 registry 时会自动走 DOM 通道。
-- **渲染 dsh-ui fence 时聊天界面白屏？** 此版 dsh-genui 要求 DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`；使用 DSH `<=0.1.1-rc.x` 的用户请使用 dsh-genui `0.9.8`。
+- **渲染 dsh-ui fence 时聊天界面白屏？** 本插件要求 DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`。
 - **`dsh: pnpm not found on PATH`？** 装 pnpm 后**新开终端**再试（`corepack enable` 或 `npm i -g pnpm`）。
-- **npm 安装返回 404？** npm 包是公开的，无需登录。先执行 `npm view @changfenhuang/dsh-genui version` 核对包名与公共 registry；若新版本刚发布仍返回 404，稍后重试。
-- **装了但 scene3d/mermaid/echarts 不渲染？** 引擎（mermaid / three / echarts）不再内联进 client.js——它们在首次用到时按需加载（`/plugins/@changfenhuang/dsh-genui/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就卸掉重装（`dsh plugin --profile web remove @changfenhuang/dsh-genui` 后再 add）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
+- **装了但 scene3d/mermaid/echarts 不渲染？** 引擎（mermaid / three / echarts / flint）不内联进 client.js——它们在首次用到时按需加载（`/plugins/dsh-genui-charts/assets/*.js`，插件自带 HTTP 路由托管）。先重启 dsh web + 硬刷新（Cmd+Shift+R）；仍不渲染就重新装一次（`dsh plugin --profile web remove dsh-genui-charts`，再 `dsh plugin --profile web add github:dofine/dsh-genui`）。旧版宿主缺少资产路由时会降级显示源码/加载失败提示，更新 dsh 即可。
 - **模型不主动输出？** 重启后新会话生效；或直接说"用 dsh-ui 输出"。
-- **clone 后没有 lib/？** `pnpm install && pnpm run check` 自己构建。
+- **改了 `src/` 但 DSH 还在跑旧代码？** `lib/` 是随仓库提交的构建产物，git 安装加载的就是它；跑一次 `pnpm build` 并提交重新构建的 `lib/`。忘了提交就会发出去旧行为，CI 也会在 `lib/` 与 `src/` 重新构建的结果不一致时失败。
 
 ## 🧑‍💻 开发
 
 ### 嵌入其他应用
 
-支持 CSS Modules 和 TypeScript 的浏览器构建器可以从 `@changfenhuang/dsh-genui/embed` 导入 `GenuiBlock`、`GenuiActionContext`、`ErrorBoundary` 和 `processGenuiSpec`，复用同一份组件、样式与规格校验，无需加载 DSH 的插件入口。
+支持 CSS Modules 和 TypeScript 的浏览器构建器可以从 `dsh-genui-charts/embed` 导入 `GenuiBlock`、`GenuiActionContext`、`ErrorBoundary` 和 `processGenuiSpec`，复用同一份组件、样式与规格校验，无需加载 DSH 的插件入口。
 
 嵌入宿主通过 `initialState` / `onStateChange` 接管持久化，使用稳定的 `stateKey` 区分界面，通过 `GenuiActionContext.Provider` 接收动作。改变 `stateKey` 会开始新的交互生命周期；同一界面的后续刷新保留输入。设置 `onStateChange` 后不读写浏览器的交互状态存储。
 
-调用 `setGenuiAssetBase` 设置本地引擎目录；从公开的 `@changfenhuang/dsh-genui/assets/mermaid`、`assets/three`、`assets/echarts-core`、`assets/echarts` 构建对应脚本。模型指引从 `@changfenhuang/dsh-genui/skill` 读取。宿主只补自己的交付通道和设计变量；渲染器仍使用本包与 `@deepseek-ai/dsh-client-ui-primitives` 的组件。构建时提供 React、CSS Modules、KaTeX 字体及所用引擎依赖。
+调用 `setGenuiAssetBase` 设置本地引擎目录；从公开的 `dsh-genui-charts/assets/mermaid`、`assets/three`、`assets/echarts-core`、`assets/echarts` 构建对应脚本。模型指引从 `dsh-genui-charts/skill` 读取。宿主只补自己的交付通道和设计变量；渲染器仍使用本包与 `@deepseek-ai/dsh-client-ui-primitives` 的组件。构建时提供 React、CSS Modules、KaTeX 字体及所用引擎依赖。
 
 ```sh
 pnpm install

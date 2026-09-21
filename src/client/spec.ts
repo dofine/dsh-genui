@@ -64,6 +64,7 @@ export type GenuiNode = (
   | GenuiBreadcrumb
   | GenuiQuiz
   | GenuiDiagram
+  | GenuiFlint
 ) & GenuiLayoutHints
 
   | GenuiEChart
@@ -806,6 +807,46 @@ export interface GenuiEChart {
   /** Full ECharts option object. When present, `preset`/`data`/`series` are
    * ignored. This is a pass-through to `echarts.setOption`. */
   option?: Record<string, unknown>
+}
+
+/** One Flint encoding: channel → field binding plus optional overrides. */
+export interface GenuiFlintEncoding {
+  field: string
+  type?: 'quantitative' | 'nominal' | 'ordinal' | 'temporal'
+  aggregate?: 'count' | 'sum' | 'average' | 'mean'
+  sortOrder?: 'ascending' | 'descending'
+  sortBy?: string
+  scheme?: string
+}
+
+/** A Flint `ChartAssemblyInput` as authored by the model: the chart spec plus
+ * bound data. Flint compiles it client-side into an ECharts option. */
+export interface GenuiFlintInput {
+  /** Bound data: inline values (small tables) or a URL the host loads. */
+  data: { values: unknown[] } | { url: string }
+  /** Field → semantic type (Amount, Percentage, Month, Category …). */
+  semantic_types?: Record<string, string>
+  chart_spec: {
+    chartType: string
+    encodings: Record<string, GenuiFlintEncoding | Partial<GenuiFlintEncoding>>
+    baseSize?: { width: number; height: number }
+    canvasSize?: { width: number; height: number }
+    chartProperties?: Record<string, unknown>
+  }
+  options?: Record<string, unknown>
+}
+
+/** Flint node: declares a chart in Flint's semantic vocabulary instead of a
+ * full ECharts option. `chartType` + `encodings` + `semantic_types` drive
+ * zero-baseline, axis formatting and percentage labels; the flint assembler
+ * ships as its own lazy asset (`lib/assets/flint.js`) and the compiled option
+ * renders through the same echarts engine the `echart` node uses. */
+export interface GenuiFlint {
+  type: 'flint'
+  /** The Flint chart assembly input. */
+  input: GenuiFlintInput
+  /** Chart height in pixels (default 300). */
+  height?: number
 }
 
 /** Parse the raw fence body as a GenuiSpec, or null when it is not one. */

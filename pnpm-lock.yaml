@@ -185,10 +185,10 @@ importers:
         version: 0.1.2-rc.1(c4f266c8456c2e5dc1e1d3e663271a2c)
       '@testing-library/dom':
         specifier: ^10.4.1
-        version: 10.4.1
+        version: 10.4.2
       '@testing-library/react':
         specifier: ^16.0.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/katex':
         specifier: 0.16.8
         version: 0.16.8
@@ -210,6 +210,9 @@ importers:
       echarts-wordcloud:
         specifier: 2.1.0
         version: 2.1.0(echarts@5.6.0)
+      flint-chart:
+        specifier: ^0.5.1
+        version: 0.5.1(echarts@5.6.0)
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
@@ -1466,8 +1469,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@testing-library/dom@10.4.1':
-    resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
+  '@testing-library/dom@10.4.2':
+    resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
     engines: {node: '>=18'}
 
   '@testing-library/react@16.3.2':
@@ -2198,6 +2201,27 @@ packages:
 
   fflate@0.8.3:
     resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
+  flint-chart@0.5.1:
+    resolution: {integrity: sha512-2JWtwM/rj86SXGZYgNsFzya/VUy5SsG4X+nEeGVndr88MmY+yN0zACi1MotHOSpZ9MZY9R0D/xQiGSTuhQngvQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      chart.js: ^4.0.0
+      echarts: ^5.0.0 || ^6.0.0
+      plotly.js: ^2.0.0 || ^3.0.0
+      vega: ^5.0.0 || ^6.0.0
+      vega-lite: ^5.0.0 || ^6.0.0
+    peerDependenciesMeta:
+      chart.js:
+        optional: true
+      echarts:
+        optional: true
+      plotly.js:
+        optional: true
+      vega:
+        optional: true
+      vega-lite:
+        optional: true
 
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
@@ -4032,7 +4056,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@testing-library/dom@10.4.1':
+  '@testing-library/dom@10.4.2':
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/runtime': 7.29.7
@@ -4043,10 +4067,10 @@ snapshots:
       picocolors: 1.1.1
       pretty-format: 27.5.1
 
-  '@testing-library/react@16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@testing-library/react@16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
-      '@testing-library/dom': 10.4.1
+      '@testing-library/dom': 10.4.2
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
     optionalDependencies:
@@ -4766,6 +4790,10 @@ snapshots:
       picomatch: 4.0.5
 
   fflate@0.8.3: {}
+
+  flint-chart@0.5.1(echarts@5.6.0):
+    optionalDependencies:
+      echarts: 5.6.0
 
   form-data@4.0.6:
     dependencies:

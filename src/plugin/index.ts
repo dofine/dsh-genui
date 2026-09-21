@@ -6,7 +6,7 @@
  * emits fences and nothing changes.
  *
  * The section uses the host's centrally allocated structured-output placement.
- * @module @changfenhuang/dsh-genui
+ * @module dsh-genui-charts
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -35,7 +35,7 @@ import { installFenceFeedback } from './fence-feedback.ts'
  */
 
 /** Route prefix under /plugins; anything under it is this plugin's asset. */
-const ASSET_ROUTE_PATH = '/plugins/@changfenhuang/dsh-genui/assets'
+const ASSET_ROUTE_PATH = '/plugins/dsh-genui-charts/assets'
 
 /** Safe flat file names only: no slashes, no traversal, js assets only. */
 const ASSET_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
@@ -97,7 +97,7 @@ Allowed \`type\` values; the \`genui\` skill, when available, carries the full c
 
 - 布局: text · row · col · grid · card · divider · spacer · hero（封面块，一条回答最多一个）
 - 展示: badge · stat · progress · list · table · keyvalue · timeline · file-tree · breadcrumb · callout · steps · diff · json · code · copy · avatar · audio · video
-- 图表: chart {"kind":"bars|line|donut","data":[{"label":"...","value":n}],"series":[{"label":"...","data":[...]}]?,"horizontal":true?,"stacked":true?}（series：bars 分组/堆叠 / line 多序列；horizontal 横向柱） · echart (preset 名或 option 直通，预设清单见 skill) · plot (函数图)
+- 图表: flint (声明式规格，图表默认路径) · chart {"kind":"bars|line|donut","data":[{"label":"...","value":n}],"series":[{"label":"...","data":[...]}]?,"horizontal":true?,"stacked":true?}（series：bars 分组/堆叠 / line 多序列；horizontal 横向柱） · echart (preset 或 option 直通) · plot (函数图)
 - 交互: button · input · textarea · select · checkbox · switch · slider · radio · submit · quiz · link · tabs · accordion
 - 高级: mermaid (流程图/时序/甘特/ER 等，关键字见 skill) · diagram (架构/流程图，27 种 kind) · scene3d (3D WebGL)
 
@@ -108,7 +108,7 @@ Allowed \`type\` values; the \`genui\` skill, when available, carries the full c
 - 默认无卡 ≠ 少用组件：硬触发照常出组件，**组件多不是问题**——判据是每个组件承载不同信息、有焦点与层次。卡片只用于并排项与数据对象；单段文字用「标题 + 正文 + 间距」。
 
 **发回答前最后自检一次**：这段内容里有没有 ≥3 条并列要点、任何对比、任何数字/指标、任何步骤或流程？有就先转成组件再开口。**状态汇报、进度说明、提交与改动清单同样算**。
-- 趋势/占比 → \`chart\`（≤8 点）或 \`echart\`（多序列/要交互时）；配色默认跟随主题，只有语义需要时才用 \`palette\`/\`card.accent\`；grid 子节点用 \`"span":2\` 跨列做宽窄混排；数据多时给 \`table\`/\`chart\`/\`list\` 配一个 \`input\`(id) + \`filter\` 绑定，读者能就地筛选。
+- 趋势/占比 → \`flint\`（默认）或 \`chart\`（≤8 点）；多序列/要交互时 \`echart\`；配色默认跟随主题，只有语义需要时才用 \`palette\`/\`card.accent\`；grid 子节点用 \`"span":2\` 跨列做宽窄混排；数据多时给 \`table\`/\`chart\`/\`list\` 配一个 \`input\`(id) + \`filter\` 绑定，读者能就地筛选。
 
 **字段速查**（完整见 genui skill）：\`stat\` \`{"label","value","delta"?}\` · \`table\` \`{"columns":[...],"rows":[[...]],"types"?,"details"?,"filter"?,"export"?}\` · \`progress\` \`{"value":0-100,"label"?,"variant"?,"target"?}\` · \`keyvalue\` \`{"pairs":[{"key","value"}]}\` · \`steps\` \`{"steps":[{"title","desc"?}]}\` · \`file-tree\` \`{"items":[{"name","type":"file|dir","children"?}]}\` · \`callout\` \`{"content","tone"?,"title"?}\`
 
@@ -133,7 +133,7 @@ Rules:
 // plugin — hosts without tool access keep the fence channel working. Cordis
 // inject entries are hard requirements, so the registry is probed at runtime
 // instead (see apply).
-export const name = '@changfenhuang/dsh-genui'
+export const name = 'dsh-genui-charts'
 export const inject = ['systemPrompt']
 
 const BUNDLED_SKILL_RANK = 600

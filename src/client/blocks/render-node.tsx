@@ -2,7 +2,7 @@
  * The recursive render dispatcher: maps the white-listed GenuiNode union to
  * concrete components. Leaf cases render inline; compound families live in
  * the sibling block modules. Depth-guarded against pathological specs.
- * @module @changfenhuang/dsh-genui/client/blocks/render-node
+ * @module dsh-genui-charts/client/blocks/render-node
  */
 import { type ComponentType, type ReactNode, useEffect, useState, type CSSProperties } from 'react'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
@@ -27,6 +27,7 @@ import { ImageNode } from './image.tsx'
 import { SvgNode } from './svg.tsx'
 
 import { EChartNode } from '../EChartNode.tsx'
+import { FlintNode } from '../FlintNode.tsx'
 
 /** Custom node data shape (declared locally: pristine hosts export no type). */
 interface GenuiCustomNode {
@@ -469,6 +470,7 @@ export function renderNode(
     case 'diagram': return <DiagramNode key={key} node={node} />
 
     case 'echart': return <EChartNode key={key} node={node} />
+    case 'flint': return <FlintNode key={key} node={node} />
     default: {
       // Plugin-registered custom types: a plugin ships a renderer through
       // registerGenuiComponent; unregistered unknowns render nothing. The

@@ -60,6 +60,11 @@ jobs:
       - name: Check (typecheck + full tests + build)
         run: pnpm run check
 
+      # This fork ships lib/ in git (GitHub installs fetch sources and never
+      # build), so committed build output must match src exactly.
+      - name: Verify committed lib/ matches the build
+        run: git diff --exit-code -- lib
+
       - name: Verify and pack plugin tarball
         id: pack
         run: node scripts/verify-pack.mjs --keep

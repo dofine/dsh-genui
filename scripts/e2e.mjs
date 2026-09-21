@@ -10,11 +10,11 @@
  * 截图保留到当前目录；清理在 finally 中完成，只杀自己起的进程组。
  *
  * 用法：
- *   node scripts/e2e.mjs [--port 3088] [--keep] [--install link|npm|tarball]
+ *   node scripts/e2e.mjs [--port 3088] [--keep] [--install link|github|tarball]
  *                        [--tarball <路径> --tarball-sha256 <sha>] [--smoke]
  *
  *   --install link    （默认）装当前工作区，测的就是当前代码
- *   --install npm     从公开 npm 包安装
+ *   --install github  从 GitHub 源码安装（github:dofine/dsh-genui），即用户的实际安装路径
  *   --install tarball 必须给 --tarball 绝对路径与 --tarball-sha256（防假安装）
  *   --smoke           不要求模型 Key：安装 → 启动 → 首页/client.js 200 →
  *                     无页面异常 → 插件 boot → Diff/Code/JSON 渲染与复制；不跑模型链路
@@ -57,7 +57,7 @@ const fail = (msg) => { console.error(`✗ ${msg}`); process.exit(1) }
 const log = (msg) => console.log(`· ${msg}`)
 
 // ── 预检：参数、端口、工具 ─────────────────────────────────────────────────
-if (!['link', 'npm', 'tarball'].includes(INSTALL)) fail(`--install 仅允许 link | npm | tarball，收到 "${INSTALL}"`)
+if (!['link', 'github', 'tarball'].includes(INSTALL)) fail(`--install 仅允许 link | github | tarball，收到 "${INSTALL}"`)
 if (INSTALL === 'tarball') {
   if (!TARBALL || !TARBALL_SHA) fail('tarball 模式必须提供 --tarball <绝对路径> 与 --tarball-sha256 <sha256>')
   if (!resolve(TARBALL).startsWith('/')) fail('--tarball 必须是绝对路径')
@@ -118,10 +118,10 @@ const logTail = async (n = 30) => {
 
 try {
   // ── 安装插件 ────────────────────────────────────────────────────────────
-  if (INSTALL === 'npm') {
-    log('安装插件（npm 公开包）...')
-    const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', '@changfenhuang/dsh-genui'], { env, stdio: 'inherit' })
-    if (r.status !== 0) fail('npm 安装失败（见上方输出）')
+  if (INSTALL === 'github') {
+    log('安装插件（GitHub 源码，用户实际安装路径）...')
+    const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', 'github:dofine/dsh-genui'], { env, stdio: 'inherit' })
+    if (r.status !== 0) fail('GitHub 安装失败（见上方输出）')
   } else if (INSTALL === 'tarball') {
     log(`安装插件（tarball ${TARBALL}）...`)
     const r = spawnSync(DSH_BIN, ['plugin', '--profile', 'web', 'add', TARBALL], { env, stdio: 'inherit' })
@@ -186,8 +186,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 }, locale: 'zh-CN', permissions: ['clipboard-read', 'clipboard-write'] })
   const pageErrors = []
   const pageMessages = []
+  const assetRequests = []
   page.on('console', message => pageMessages.push(message.text()))
   page.on('pageerror', e => pageErrors.push(String(e)))
+  page.on('request', request => assetRequests.push(request.url()))
   await page.goto(readyUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
   await page.waitForTimeout(5000)
 
@@ -195,13 +197,13 @@ try {
   const boot = await page.evaluate(() => {
     const boot = window.__DSH_BOOT__
     if (boot === null || typeof boot !== 'object' || !Array.isArray(boot.entries)) return undefined
-    return { entries: boot.entries.length, clientUrl: boot.entries.find(entry => entry.id === '@changfenhuang/dsh-genui')?.url }
+    return { entries: boot.entries.length, clientUrl: boot.entries.find(entry => entry.id === 'dsh-genui-charts')?.url }
   })
   if (boot?.entries === 0) {
     await page.screenshot({ path: join(artifactsDir, 'e2e-fail-empty-host-boot.png') })
     fail('dsh 宿主启动图为空（连内置浏览器插件都未注册）')
   }
-  const clientUrl = boot?.clientUrl ?? '/plugins/@changfenhuang/dsh-genui/client.js'
+  const clientUrl = boot?.clientUrl ?? '/plugins/dsh-genui-charts/client.js'
   const clientRes = await fetch(`${BASE}${clientUrl}`)
   if (!clientRes.ok) {
     await page.screenshot({ path: join(artifactsDir, 'e2e-fail-client404.png') })
@@ -289,6 +291,36 @@ try {
     assert.equal(colors.width, '70%')
     log(`排序、颜色、悬停和节点重新插入验证通过：${JSON.stringify({ position, colors })}`)
     if (pageErrors.length > 0) throw new Error(`组件渲染异常: ${pageErrors.join(' | ')}`)
+
+    // flint: the fork's chart node must compile Flint's semantic spec in the
+    // browser (flint.js asset) and draw it through the echarts engine.
+    await page.evaluate(() => {
+      const fixture = document.createElement('div')
+      fixture.setAttribute('data-flint-smoke', '')
+      const host = document.createElement('div')
+      host.className = 'md-code-block'
+      const label = document.createElement('div')
+      label.textContent = 'dsh-ui'
+      const pre = document.createElement('pre')
+      const code = document.createElement('code')
+      code.textContent = JSON.stringify({ items: [{ type: 'flint', input: {
+        data: { values: [{ month: '1月', sales: 128400 }, { month: '2月', sales: 96000 }] },
+        semantic_types: { month: 'Month', sales: 'Amount' },
+        chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'month' }, y: { field: 'sales' } } },
+      } }] })
+      pre.appendChild(code)
+      host.append(label, pre)
+      fixture.appendChild(host)
+      document.body.appendChild(fixture)
+    })
+    const flintCanvas = page.locator('[data-flint-smoke] [data-genui-flint] canvas').first()
+    await flintCanvas.waitFor({ state: 'visible', timeout: 30_000 })
+    assert.equal(await page.locator('[data-flint-smoke] [class*="echartErr"]').count(), 0, 'flint 不应降级为错误提示')
+    const flintBox = await flintCanvas.boundingBox()
+    assert.ok(flintBox !== null && flintBox.width > 50 && flintBox.height > 50, `flint 画布尺寸异常: ${JSON.stringify(flintBox)}`)
+    assert.ok(assetRequests.some(url => url.includes('flint.js')), 'flint 引擎资产应被按需加载')
+    log(`flint 图表渲染验证通过：${JSON.stringify({ width: Math.round(flintBox.width), height: Math.round(flintBox.height) })}`)
+    if (pageErrors.length > 0) throw new Error(`flint 渲染异常: ${pageErrors.join(' | ')}`)
     // Exercise the installed SVG without remounting it when the host changes theme.
     await page.emulateMedia({ colorScheme: 'light' })
     await page.evaluate(() => {

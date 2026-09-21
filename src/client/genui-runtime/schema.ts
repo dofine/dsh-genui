@@ -306,6 +306,7 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
     enums: { preset: ECHART_PRESETS },
   }),
   'file-tree': schema(['items'], { ...nodeFields, items: 'array' }, { nodes: 'items' }, { nested: { items: fileTreeNodeSchema } }),
+  flint: schema(['input'], { ...nodeFields, input: 'object', height: 'number' }),
   grid: schema(['items'], { ...nodeFields, cols: 'number', items: 'nodes' }),
   image: schema(['src'], { ...nodeFields, src: 'string', alt: 'string' }, { url: 'src', link: 'src' }),
   input: schema([], { ...nodeFields, label: 'string', placeholder: 'string', value: 'string', inputType: 'string', action: 'string', id: 'string' }, {}, { enums: { inputType: INPUT_TYPES } }),

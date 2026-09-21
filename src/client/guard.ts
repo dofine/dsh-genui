@@ -18,7 +18,7 @@
  * - The whole spec carries a node budget; once exhausted, remaining siblings
  *   are elided.
  */
-import type { GenuiFileTreeNode, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec, GenuiDiagram, GenuiDiagramTheme, GenuiDiagramKind } from './spec.ts'
+import type { GenuiFileTreeNode, GenuiFlintInput, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec, GenuiDiagram, GenuiDiagramTheme, GenuiDiagramKind } from './spec.ts'
 import { isComponentRoot, wrapSingleComponentRoot } from './spec.ts'
 import {
   BADGE_TONES, BUTTON_TONES, CALLOUT_TONES, CARD_TONES, CHART_KINDS, COMPONENT_SCHEMAS, HERO_TONES,
@@ -714,6 +714,15 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
         ...opt('option', option),
       }
     }
+    case 'flint': {
+      const input = repairFlintInput(v.input)
+      if (input === undefined) return null
+      return {
+        type: 'flint',
+        input,
+        ...opt('height', int(v.height, 100, 800)),
+      }
+    }
     default:
       // Plugin-registered custom node types are opaque to the guard: pass
       // through unchanged (the renderer's default branch resolves them).
@@ -1284,6 +1293,41 @@ function sanitizeEChartOption(v: unknown, depth: number, budget: EChartSanitizeB
   // Empty axes/tooltip enable ECharts defaults; an empty data array clears it.
   // Keep intentional empties, while still dropping objects stripped by guards.
   return Object.keys(out).length > 0 || Object.keys(o).length === 0 ? out : undefined
+}
+
+/**
+ * Repair a Flint `ChartAssemblyInput`. `data`, `chart_spec`,
+ * `semantic_types` and `options` carry plain JSON authored by the model, so
+ * each goes through the ECharts sanitize walk: dangerous strings (HTML/script
+ * patterns, `url(`), non-data members and over-deep structures never reach
+ * the flint assembler or the compiled option. `chart_spec.chartType` stays a
+ * required non-empty string — without it Flint has nothing to compile, so the
+ * node is dropped.
+ * @param v - the raw `input` value of a `flint` node.
+ * @returns the repaired input, or undefined when it cannot be compiled.
+ */
+function repairFlintInput(v: unknown): GenuiFlintInput | undefined {
+  const raw = obj(v)
+  if (raw === undefined) return undefined
+  const spec = obj(raw.chart_spec)
+  const chartType = spec === undefined ? undefined : str(spec.chartType, 128)
+  if (spec === undefined || chartType === undefined) return undefined
+  const data = obj(sanitizeEChartOption(raw.data, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }))
+  if (data === undefined) return undefined
+  const chartSpec = obj(sanitizeEChartOption(spec, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }))
+  if (chartSpec === undefined) return undefined
+  const semantic = raw.semantic_types === undefined
+    ? undefined
+    : obj(sanitizeEChartOption(raw.semantic_types, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }))
+  const options = raw.options === undefined
+    ? undefined
+    : obj(sanitizeEChartOption(raw.options, 0, { count: GENUI_LIMITS.maxEChartOptionNodes }))
+  return {
+    data: data as GenuiFlintInput['data'],
+    chart_spec: chartSpec as GenuiFlintInput['chart_spec'],
+    ...opt('semantic_types', semantic as Record<string, string> | undefined),
+    ...opt('options', options),
+  }
 }
 
 /**

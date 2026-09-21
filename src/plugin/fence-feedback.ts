@@ -23,7 +23,7 @@
  * `processGenuiSpec` → `isRenderableProcess`) and the tool's model-facing
  * diagnosis, so the correction quotes the same field errors the validator
  * reports.
- * @module @changfenhuang/dsh-genui/plugin/fence-feedback
+ * @module dsh-genui-charts/plugin/fence-feedback
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -36,7 +36,7 @@ import { parsePartialGenuiSpec } from '../client/parse-partial.ts'
 import { droppedNodeFailure } from './tool.ts'
 
 /** Plugin name recorded on every message this loop steers. */
-export const FEEDBACK_PLUGIN_NAME = '@changfenhuang/dsh-genui'
+export const FEEDBACK_PLUGIN_NAME = 'dsh-genui-charts'
 
 /** Marker prefix inside the correction text: `[genui 自修 #<fingerprint>]`. */
 const MARKER_PREFIX = '[genui 自修 #'

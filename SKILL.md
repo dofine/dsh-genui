@@ -19,7 +19,7 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 
 布局：`text` `row` `col` `grid` `card` `divider` `spacer`
 展示：`stat` `badge` `progress` `list` `table` `keyvalue` `avatar` `image` `audio` `video` `timeline` `file-tree` `breadcrumb` `diff` `json` `code` `callout` `steps`
-图表：`chart`（bars/line/donut，可多序列）`plot`（数学函数图）`echart`（ECharts 全功能图表）
+图表：`flint`（语义图表规格，图表默认路径）`chart`（bars/line/donut，可多序列）`plot`（数学函数图）`echart`（ECharts 全功能图表）
 交互：`button` `input` `select` `checkbox` `radio` `switch` `textarea` `tabs` `accordion` `copy`
 
 ### 布局
@@ -53,6 +53,10 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 - steps: `{"type":"steps","current":n,"steps":[{"title":"...","desc":"..."}]}`
 
 ### 图表
+- flint: `{"type":"flint","input":{"data":{"values":[{"month":"1月","sales":128400}]},"semantic_types":{"month":"Month","sales":"Amount"},"chart_spec":{"chartType":"Bar Chart","encodings":{"x":{"field":"month"},"y":{"field":"sales"}}}}},"height":300?}` — **图表默认路径**：写语义规格而不是渲染配置。`chartType` 用 Flint 的图表名（`"Bar Chart"` / `"Line Chart"` / `"Pie Chart"` / `"Scatter Plot"` / `"Heatmap"` / `"Box Plot"` …）；`encodings` 是通道→字段（`x`/`y`/`color`/`size`…，可带 `type` `aggregate` `sortOrder` `scheme`）；`semantic_types` 把字段标成语义类型（`Amount` 金额 / `Percentage` 百分比 / `Month` `Date` 时间 / `Category` 类别 / `Quantity` 数量）——**语义类型决定零基线、坐标轴格式化、百分比标签与配色**，金额不会画成从零起的裸数字。数据只写小表内联 `data:{"values":[...]}`；**大表先在数据工具里聚合/筛选好再绑定**，不要把原始明细塞进围栏。前端用 Flint 把规格编译成 ECharts 渲染；`height` 缺省 300、被夹到 100–800。编译失败或引擎缺失时该块降级为错误提示，围栏其余部分照常渲染。
+```json dsh-ui
+{"title":"月度销售","items":[{"type":"flint","input":{"data":{"values":[{"month":"1月","sales":128400},{"month":"2月","sales":96000}]},"semantic_types":{"month":"Month","sales":"Amount"},"chart_spec":{"chartType":"Bar Chart","encodings":{"x":{"field":"month"},"y":{"field":"sales"}}}}}]}
+```
 - chart: `{"type":"chart","kind":"bars|line|donut","data":[{"label":"...","value":n,"color":"#hex?"}],"series":[{"label":"...","data":[...]}]?,"horizontal":true?}` — bars 默认；line 趋势；donut 占比；**series：bars 是分组柱，line 是多序列折线**；**`horizontal:true` 画横向柱**（排行/长标签首选）；**`stacked:true` 把 series 堆叠**（构成/占比随时间）；堆叠段够高时数值直接印在段内，鼠标悬停任意柱/段/点/扇区都会弹出即时 tooltip（堆叠显示该段数值 + 合计）。v3 渲染：宽度自适应、Y 轴 1/2/5 刻度、单序列负值在零线以下真实绘制、line 带面积渐变与抽稀 X 标签、donut 图例显示数值与百分比。**≤8 个点的快速对比用 chart；多序列、需要缩放/交互或数据量大时用 echart**
 - plot: `{"type":"plot","series":[{"expr":"a*sin(b*x)","label":"...","color":"#hex?","params":[{"name":"a","value":1,"min":0,"max":5,"animateTo":3,"durationMs":4000,"loop":true},{"name":"b","value":1,"min":0.5,"max":5}]}],"xMin":-6.28,"xMax":6.28,"title":"..."}` — SVG 函数图；**series 可带 `"kind":"line|area|scatter"`**（缺省 line；area 填色到基线；scatter 散点）；**params 渲染成实时滑块**（拖动即时重绘，**y 轴锁定**=只变曲线不变数轴）；**animateTo 参数会显示播放按钮**（自动动画演示）；SVG 可拖拽平移、滚轮缩放；表达式支持 sin/cos/tan/asin/acos/atan/sqrt/cbrt/exp/log/ln/abs/floor/ceil/round/min/max/pow，常量 pi/e/tau，变量 x（其他字母=参数）
 - echart: `{"type":"echart","title":"...","height":300,"preset":"bar|line|area|pie|scatter","data":[{"label":"...","value":n}],"series":[...]?}` — **ECharts 全功能图表**，视觉效果远超 `chart`（渐变、tooltip、动画、图例交互）；**preset 模式**：用和 `chart` 一样的 `data`/`series` 格式，自动构建主题化的 ECharts 配置（颜色跟随宿主主题）；**preset 一览**（只写 preset + data/series/links，主题自动跟随）：
@@ -95,14 +99,14 @@ description: "Render structured interactive UI inline in your reply via the dsh-
 **硬触发（出现就至少出一个围栏，不要退回纯文字段落）**：
 - ≥3 条并列要点 → `list`；≥2 组数字对比 → `table`；指标/进度/状态 → `stat`/`progress`/`badge`
 - 步骤/时间线 → `steps`/`timeline`/`mermaid`；架构/流程 → `diagram`/`mermaid`；风险/结论 → `callout`；代码/改动 → `code`/`diff`/`json`
-- 趋势/占比 → `chart`（≤8 点）或 `echart`（多序列/要交互/数据量大）
+- 趋势/占比 → `flint`（默认，写语义规格）或 `chart`（≤8 点）；多序列/要交互/数据量大 → `echart`
 - 收尾自检：回答超过约 10 行时确认至少有一个围栏；同一份信息不要既写文字又重复出组件；纯问答不套 UI。
 
 | 你要呈现的内容 | 用这些组件 |
 |---|---|
 | 关键结论 / 要点罗列（≥2 条） | `list`、`keyvalue`、`callout` |
 | 重点强调 / 警告 / 注意事项 | `callout`（info/success/warning/error）、`badge`、`stat` |
-| 数据对比 / 趋势 / 占比 | `chart`（bars/line/donut）、`echart`（ECharts 全功能）、`table` |
+| 数据对比 / 趋势 / 占比 | `flint`（语义规格，默认）、`chart`（bars/line/donut）、`echart`（ECharts 全功能）、`table` |
 | 关键指标数字 / 进度状态 | `stat`、`progress`、`badge` |
 | 回答的视觉锚点（第一个组件） | `hero`（封面块，一条回答最多一个） |
 | 想排版不呆板 | `grid` + 子节点 `span`（bento：宽窄混排） |
