@@ -134,12 +134,15 @@ describe('fenceFailures: only fences that would stay a code block', () => {
     const failures = fenceFailures(reply(BROKEN))
     expect(failures).toHaveLength(1)
     expect(failures[0]!.detail).toContain("type 'stat' requires label")
+    expect(failures[0]!.detail).not.toContain('[genui-validation]')
+    expect(failures[0]!.detail).not.toContain('next=fix_and_revalidate')
+    expect(failures[0]!.detail).not.toContain('reply_language=conversation')
     expect(failures[0]!.fingerprint).toBe(fenceFingerprint(BROKEN))
   })
 
   it('reports unparseable and unterminated bodies distinctly', () => {
-    expect(fenceFailures('```dsh-ui\n{ not json\n```')[0]!.detail).toContain('不是合法 JSON')
-    expect(fenceFailures('```dsh-ui\n{"items":[]}')[0]!.detail).toContain('未闭合')
+    expect(fenceFailures('```dsh-ui\n{ not json\n```')[0]!.detail).toContain('error=invalid_json')
+    expect(fenceFailures('```dsh-ui\n{"items":[]}')[0]!.detail).toContain('error=unterminated_fence')
   })
 
   it('accepts bodies repaired by the settled renderer pipeline', () => {
@@ -175,7 +178,7 @@ describe('planFenceFeedback: the bounds that prevent a retry storm', () => {
     expect(plan).not.toBeNull()
     expect(plan!.turn).toBe(1)
     expect(plan!.fingerprints).toEqual([fenceFingerprint(BROKEN)])
-    expect(plan!.text).toContain('只重发修正后的 dsh-ui 围栏')
+    expect(plan!.text).toContain('next=resend_corrected_fence_only')
   })
 
   it('checks the final reply body even when an earlier validated body was valid', () => {
@@ -212,8 +215,14 @@ describe('the steered correction message', () => {
   it('is a plugin-sourced notice with a stable marker and the failure detail', () => {
     const failures = fenceFailures(reply(BROKEN))
     const text = fenceCorrectionText(failures)
-    expect(text).toContain(`[genui 自修 #${failures[0]!.fingerprint}]`)
+    expect(text).toContain(`[genui-fence-repair #${failures[0]!.fingerprint}]`)
+    expect(text).toContain('[genui-fence-repair]')
+    expect(text).toContain('reply_language=conversation')
     expect(text).toContain("type 'stat' requires label")
+    expect(text).not.toContain('[genui-validation]')
+    expect(text).not.toContain('next=fix_and_revalidate')
+    expect(text).not.toContain('围栏没有渲染成界面')
+    expect(text).not.toContain('请只重发修正后的')
     const message = createFeedbackMessage(text)
     expect(message.role).toBe('user')
     expect(typeof message.id).toBe('string')
@@ -227,8 +236,8 @@ describe('the steered correction message', () => {
     const failures = fenceFailures(reply(BROKEN, '{"items":[{"type":"table"}]}'))
     expect(failures).toHaveLength(2)
     const text = fenceCorrectionText(failures)
-    expect(text).toContain('第 1 个围栏')
-    expect(text).toContain('第 2 个围栏')
+    expect(text).toContain('fence=1')
+    expect(text).toContain('fence=2')
   })
 })
 
@@ -281,6 +290,23 @@ describe('installFenceFeedback wiring', () => {
       data: {
         content: [{ type: 'text', text: fenceCorrectionText(failures) }],
         source: { kind: 'plugin', plugin: FEEDBACK_PLUGIN_NAME, form: 'notice', summary: 'x' },
+      },
+    } as unknown as SessionEvent)
+    h.emitSession(assistantEvent(reply(BROKEN)))
+    h.boundary({ agent: { session: { id: 'sess-1', header: { id: 'sess-1' } }, steer: h.steer }, turn: 9, signal: new AbortController().signal })
+    expect(h.steer).not.toHaveBeenCalled()
+  })
+
+  it('adopts fingerprints from legacy repair markers', () => {
+    const h = harness()
+    const fingerprint = fenceFingerprint(BROKEN)
+    h.emitSession({
+      type: 'user/message',
+      seq: 4,
+      time: 1,
+      data: {
+        content: [{ type: 'text', text: `[genui 自修 #${fingerprint}]\nlegacy repair notice` }],
+        source: { kind: 'plugin', plugin: FEEDBACK_PLUGIN_NAME, form: 'notice', summary: 'legacy' },
       },
     } as unknown as SessionEvent)
     h.emitSession(assistantEvent(reply(BROKEN)))

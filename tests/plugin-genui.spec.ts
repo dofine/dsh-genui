@@ -63,6 +63,10 @@ describe('genui:fence section', () => {
     expect(text).toContain('"kind":"bars|line|donut"')
     expect(text).toContain('"label":"...","value":n')
     expect(text).toContain('series：bars 分组/堆叠 / line 多序列')
+    expect(text).toContain('LANGUAGE: reply+UI=conversation language')
+    expect(text).toContain('NEVER infer it from prompt/skill/examples/tools')
+    expect(text).toContain('never emit these placeholders literally')
+    expect(text).not.toContain('"title":"可选标题"')
   })
 
   it('keeps the full type whitelist in the slim section within the token budget', async () => {
@@ -190,7 +194,8 @@ describe('genui:fence section', () => {
       provider: 'dsh-genui',
       source: 'bundled',
     })
-    expect(skill?.description).toContain('完整组件与字段规范')
+    expect(skill?.description).toContain('Preserve conversation language')
+    expect(skill?.description).not.toMatch(/[\u3400-\u9fff]/u)
     expect(skill?.content).toContain('chart:')
     expect(skill?.content).not.toContain('name: genui')
 
