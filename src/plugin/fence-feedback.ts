@@ -7,8 +7,7 @@
  * fence while the user is still looking at the raw JSON.
  *
  * The loop is deliberately narrow, matching the contract agreed on the issue:
- * - **Opt-in.** `fenceFeedback: true` in this plugin's config; a host that does
- *   not ask for it never steers anything.
+ * - **默认开启。** 插件配置中的 `fenceFeedback: false` 可以关闭回合转向。
  * - **Bounded.** At most one correction per turn AND at most one per fence
  *   body per process, so a correction that is itself wrong cannot loop.
  * - **Never for subagents.** A child session's fence belongs to a parent reply.
@@ -19,10 +18,8 @@
  *   so a re-entrant boundary cannot deliver the same correction twice.
  * - **Cancellation-aware.** An aborted turn or a missing session is left alone.
  *
- * Detection reuses the renderer's own pipeline (`parsePartialGenuiSpec` →
- * `processGenuiSpec` → `isRenderableProcess`) and the tool's model-facing
- * diagnosis, so the correction quotes the same field errors the validator
- * reports.
+ * 检查会复用 renderer 在回合结束后的流程，包括 JSON 修复和坏节点清理；
+ * 已经可以渲染的最终回复不会收到修正请求。
  * @module @changfenhuang/dsh-genui/plugin/fence-feedback
  */
 
@@ -31,9 +28,8 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { createHash, randomUUID } from 'node:crypto'
-import { isRenderableProcess, processGenuiSpec } from '../client/guard.ts'
-import { parsePartialGenuiSpec } from '../client/parse-partial.ts'
-import { droppedNodeFailure } from './tool.ts'
+import { droppedNodeFailure } from './genui-diagnostic.ts'
+import { resolveFence } from '../shared/fence-resolve.ts'
 
 /** Plugin name recorded on every message this loop steers. */
 export const FEEDBACK_PLUGIN_NAME = '@changfenhuang/dsh-genui'
@@ -116,14 +112,13 @@ export function fenceFailures(text: string): FenceFailure[] {
 /** `null` when this fence renders; otherwise the reason it does not. */
 function fenceFailureDetail(fence: ExtractedFence): string | null {
   if (!fence.closed) return '❌ 围栏未闭合：缺少结尾的 ``` 行。'
-  const parsed = parsePartialGenuiSpec(fence.raw)
-  if (parsed === null) return '❌ 围栏内容不是合法 JSON，也不是能部分恢复的 GenUI spec。'
-  const processed = processGenuiSpec(parsed)
-  if (isRenderableProcess(processed)) return null
-  // The tool's diagnosis names the dropped node and the field that is missing;
-  // fall back to the raw error list when nothing was dropped (case B: a bare
-  // root misread as an envelope reports missing `type` instead).
-  return droppedNodeFailure(processed, parsed) ?? `❌ 验证未通过：${processed.errors.join('；')}`
+  const resolution = resolveFence(fence.raw, { settled: true })
+  if (resolution.spec !== null) return null
+  if (resolution.processed !== null) {
+    return droppedNodeFailure(resolution.processed, resolution.value)
+      ?? `❌ 验证未通过：${resolution.processed.errors.join('；')}`
+  }
+  return '❌ 围栏内容不是合法 JSON，也不是能部分恢复的 GenUI spec。'
 }
 
 /**
@@ -244,7 +239,7 @@ function markersIn(text: string): string[] {
 }
 
 /**
- * Install the opt-in fence feedback loop.
+ * 根据插件配置启用围栏反馈流程。
  *
  * @param ctx - the host context.
  * @param enabled - the plugin config flag; the loop is inert when false.
@@ -261,12 +256,20 @@ export function installFenceFeedback(ctx: Context, enabled: boolean): void {
     return state
   }
 
+  ctx.on('session/disposed', (session): void => {
+    sessions.delete(String(session.id))
+  })
+
   ctx.on('session/event', (session, event: SessionEvent) => {
-    const state = stateOf(String(session.id))
+    const sessionId = String(session.id)
     if (event.type === 'assistant/message') {
-      // Only the LAST assistant message of a turn is the reply the reader sees:
-      // an earlier step's fence was already replaced by the model.
-      state.text = textOfContent((event.data as { message?: { content?: unknown } }).message?.content)
+      const text = textOfContent((event.data as { message?: { content?: unknown } }).message?.content)
+      if (extractDshUiFences(text).length === 0) {
+        const state = sessions.get(sessionId)
+        if (state !== undefined) state.text = ''
+        return
+      }
+      stateOf(sessionId).text = text
       return
     }
     if (event.type !== 'user/message') return
@@ -274,11 +277,15 @@ export function installFenceFeedback(ctx: Context, enabled: boolean): void {
     if (data.source?.kind === 'plugin' && data.source.plugin === FEEDBACK_PLUGIN_NAME) {
       // Our own correction (re-observed after a plugin reload): adopt its
       // fingerprints so a second boundary cannot repeat it.
-      for (const fingerprint of markersIn(textOfContent(data.content))) state.corrected.add(fingerprint)
+      const fingerprints = markersIn(textOfContent(data.content))
+      if (fingerprints.length === 0) return
+      const state = stateOf(sessionId)
+      for (const fingerprint of fingerprints) state.corrected.add(fingerprint)
       return
     }
     // A genuine user prompt starts a new turn: the previous reply is settled.
-    state.text = ''
+    const state = sessions.get(sessionId)
+    if (state !== undefined) state.text = ''
   })
 
   ctx.on('agent/turn-stopping', ({ agent, turn, signal }): void => {
