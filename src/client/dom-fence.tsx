@@ -58,6 +58,9 @@ import css from './GenuiBlock.module.css'
 import { renderSvgFence } from './svg-fence.tsx'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 import { resolveViewedSessionId } from './session-resolver.ts'
+import { validateCanonicalGenuiSpec } from './guard.ts'
+import { diagnoseUnknownGenuiFields } from './genui-runtime/diagnostics.ts'
+import { normalizeGenuiSpec } from './genui-runtime/normalize.ts'
 
 /** Fence surfaces the channel can take over, newest host first: the shared
  * CodeBlock surface every rc.6+ markdown fence renders through
@@ -194,6 +197,25 @@ function labelTextOf(block: Element): string {
     return el.textContent?.trim() ?? ''
   }
   return ''
+}
+
+/** 仅在通用 CodeBlock 的完整 JSON 通过现有 GenUI 规范时恢复丢失的围栏语言。
+ *
+ * @param block - 宿主提供的代码块元素。
+ * @param raw - 未修改的围栏正文。
+ * @returns 正文能按原有 GenUI 规范直接识别时返回 true。
+ */
+function isGenericGenuiFence(block: Element, raw: string): boolean {
+  if (infostringOf(block) !== null || !block.querySelector('[data-code-block-banner]')) return false
+  if (!['Code', 'Code block', '代码块'].includes(labelTextOf(block))) return false
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  if (!validateCanonicalGenuiSpec(value).ok || diagnoseUnknownGenuiFields(value).length > 0) return false
+  return JSON.stringify(normalizeGenuiSpec(value).value) === JSON.stringify(value)
 }
 
 /** Raw fence body from the stock block's code surface. */
@@ -349,7 +371,7 @@ function fenceIndexOf(row: Element, block: Element): number {
   let index = 0
   for (const candidate of findFenceCandidates(scope)) {
     if (candidate.closest(STREAMING) !== null) continue
-    if (infostringOf(candidate) !== 'dsh-ui') continue
+    if (infostringOf(candidate) !== 'dsh-ui' && !isGenericGenuiFence(candidate, rawOf(candidate))) continue
     index += 1
     if (candidate === block) return index
   }
@@ -551,16 +573,20 @@ export function installDomFenceRenderer(
     if (block.hasAttribute(PROCESSED)) return
     const row = rowOf(block)
     const settled = isSettled(block)
-    // Settled blocks must carry the dsh-ui label. Streaming blocks cannot:
+    // 已完成的代码块通常带有 dsh-ui 标签；流式代码块可能没有标签：
     // the host renders the language label only once the reply settles
     // (MarkdownText passes `lang={streaming ? undefined : lang}`), so during
     // streaming the fence is identified by CONTENT — a partial parse that
     // yields a GenUI node. A misidentified fence (e.g. a ```json block that
     // happens to parse) is reverted at the settle transition below.
     const language = infostringOf(block)
-    if (settled && language === null) return
-    if (!settled && language === 'svg') return
     const raw = rawOf(block)
+    // DSH 0.1.7 可能丢失围栏 language metadata，最终显示通用 Code。
+    // 显式 language 始终优先，正文识别不能覆盖已有的语言信息。
+    const genericGenui = settled && language === null && isGenericGenuiFence(block, raw)
+    if (settled && language === null && !genericGenui) return
+    if (!settled && language === null && labelTextOf(block) !== '') return
+    if (!settled && language === 'svg') return
     if (raw.trim() === '') {
       if (settled) warnOnce(block, `settled ${language ?? 'dsh-ui'} fence has an empty body; keeping the code block`)
       return
@@ -685,13 +711,10 @@ export function installDomFenceRenderer(
         unmountBlock(block)
         continue
       }
-      // Settle transition label re-verification: a streaming block was taken
-      // over by content, not by label. If the now-visible label exists and is
-      // NOT dsh-ui (a ```json fence that happened to parse), restore the
-      // stock block and drop the mount.
-      if (settled && !mount.lastSettled) {
+      // 流式结束后仍以显式 language 为准；通用 Code 每次正文变化均需完整校验。
+      if (settled && mount.language !== 'svg') {
         const labelText = labelTextOf(block)
-        if (labelText !== '' && labelText !== 'dsh-ui') {
+        if (labelText !== '' && labelText !== 'dsh-ui' && !isGenericGenuiFence(block, raw)) {
           // A content-identified fence settled as another language (e.g. a
           // ```json block that happened to parse): restore the stock block.
           unmountBlock(block)

@@ -61,7 +61,8 @@ describe('/panel slash source', () => {
     })
     expect(outcome).not.toBeUndefined()
     expect(outcome).toHaveProperty('claim')
-    const claim = (outcome as { claim: { submit: (a: string) => Promise<unknown> } }).claim
+    const claim = (outcome as { claim: { name: string; submit: (a: string) => Promise<unknown> } }).claim
+    expect(claim.name).toBe('panel')
     const result = await claim.submit('')
     expect(result).toEqual({ kind: 'success' })
     expect(getPanelSpec(SID)).toEqual(defaultPanelSpec())

@@ -79,6 +79,7 @@ function applyPanelCommand(sessionId: string, args: string): void {
  */
 function panelClaim(sessionId: SessionId, sendInstruction: (sessionId: SessionId, instruction: string) => void) {
   return {
+    name: 'panel',
     token: '/panel',
     hint: t('panel.cmd.hint'),
     submit: async (args: string, _actx: ClientContext) => {

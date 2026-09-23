@@ -3,6 +3,8 @@ node_modules/
 lib/
 .e2e-artifacts/
 .e2e-artifacts-*/
+.compat-host-*/
+.compat-check-*/
 .playwright-cli/
 # macOS Finder metadata (never source)
 .DS_Store

@@ -33,8 +33,7 @@ function makeModernCtx(sessionId: string): Context {
             [sessionId]: { id: sessionId, retainedBy: { mainView: 1 } },
           },
           phase: 'ready',
-          subagentsByParent: {},
-          jobsBySession: {},
+          projectionsBySession: {},
         }),
       },
     },
@@ -55,6 +54,13 @@ function stockCodeBlock(raw: string, lang: string): HTMLElement {
   pre.appendChild(code)
   block.appendChild(banner)
   block.appendChild(pre)
+  return block
+}
+
+/** 构造 DSH 0.1.7 仅显示通用标签的 CodeToolbar DOM 测试结构。 */
+function genericCodeBlock(raw: string, label = '代码块'): HTMLElement {
+  const block = stockCodeBlock(raw, label)
+  block.querySelector('div')?.setAttribute('data-code-block-banner', '')
   return block
 }
 
@@ -111,6 +117,64 @@ afterEach(() => {
 })
 
 describe('installDomFenceRenderer', () => {
+  it.each(['Code', 'Code block', '代码块'])('renders canonical GenUI from a generic %s banner', async label => {
+    const row = assistantRow('generic-valid')
+    const block = genericCodeBlock(VALID_SPEC, label)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it.each([
+    '{"name":"ordinary","items":[]}',
+    '{"items":[{"type":"text","content":',
+    '{"items":[{"type":"button"}]}',
+    '{"items":[{"type":"text","content":"你好","unknown":true}]}',
+    '{"items":[{"type":"text","text":"别名"}]}',
+  ])('keeps invalid or ordinary JSON in a generic CodeBlock: %s', async raw => {
+    const row = assistantRow('generic-rejected')
+    const block = genericCodeBlock(raw)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(block.style.display).toBe('')
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
+      expect(row.querySelector('.genui-dom-fence-diagnostic')).toBeNull()
+    } finally { dispose() }
+  })
+
+  it.each(['json', 'javascript'])('honors explicit %s over GenUI-shaped content', async language => {
+    const row = assistantRow(`explicit-${language}`)
+    const block = stockCodeBlock(VALID_SPEC, language)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('explicit-session'), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
+    } finally { dispose() }
+  })
+
+  it('keeps explicit dsh-ui and earlier host language labels on the existing path', async () => {
+    const row = assistantRow('explicit-genui')
+    const block = stockCodeBlock(VALID_SPEC, 'dsh-ui')
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('explicit-session'), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
   it('previews only explicitly labelled settled SVG and restores it on dispose', async () => {
     const raw = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><rect width="50" height="20"/></svg>'
     const row = assistantRow('svg-row', true)

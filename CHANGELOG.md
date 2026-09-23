@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 兼容性
+
+- 增加 DSH `^0.1.7-alpha.1` 支持；真实宿主验收覆盖 `dsh-v0.1.7-alpha.1` 与 `dsh-v0.1.7-alpha.2`。
+- 保留 DSH `0.1.2-rc.1` 最低兼容基线检查。
+- 增加新版 DSH API 编译检查，确保宿主公开类型变化能够在发布前被发现。
+- 适配新版 `CommandClaim.name` 与 ui-primitives 箭头图标导出变化。
+- 适配 `0.1.7-alpha.2` 的 `DiffBlockLabels` 工具栏文案。
+- 适配 `0.1.7-alpha.2` 代码块丢失 `dsh-ui` language metadata 的情况：仅对通用 CodeBlock 的完整 JSON 执行原有 GenUI 规范校验；显式 language 始终优先。
+
 ### 新增
 - **ECharts 词云**：`echart` 节点新增 `preset: "wordCloud"`，`data:[{label,value}]` 的 value 即权重，颜色按序循环 `palette`（缺省跟随主题调色板）；`option` 模式同步注册 `echarts-wordcloud` 扩展，`series[].type: "wordCloud"` 直接可用。完整版引擎新增约 30 KB（#183）。
 - **SVG 图形组件**：`{"type":"svg","code":"<svg …/>"}`（`title`/`height` 可选）以隔离图片模式渲染模型输出的独立 SVG——脚本注入、宿主样式污染在结构上被排除；解析失败或加载失败时保留源码并显示提示（#183）。
