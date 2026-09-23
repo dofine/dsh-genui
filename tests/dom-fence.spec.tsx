@@ -163,6 +163,18 @@ describe('installDomFenceRenderer', () => {
     } finally { dispose() }
   })
 
+  it('keeps a generic CodeBlock outside assistant conversation rows', async () => {
+    const block = genericCodeBlock(VALID_SPEC)
+    document.body.appendChild(block)
+    const dispose = installDomFenceRenderer(makeModernCtx('sidebar-session'), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(block.style.display).toBe('')
+      expect(document.querySelector('.genui-dom-fence')).toBeNull()
+    } finally { dispose() }
+  })
+
   it('keeps explicit dsh-ui and earlier host language labels on the existing path', async () => {
     const row = assistantRow('explicit-genui')
     const block = stockCodeBlock(VALID_SPEC, 'dsh-ui')

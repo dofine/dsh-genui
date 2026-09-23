@@ -206,6 +206,7 @@ function labelTextOf(block: Element): string {
  * @returns 正文能按原有 GenUI 规范直接识别时返回 true。
  */
 function isGenericGenuiFence(block: Element, raw: string): boolean {
+  if (block.closest(ASSISTANT_FLOW_ROW) === null) return false
   if (infostringOf(block) !== null || !block.querySelector('[data-code-block-banner]')) return false
   if (!['Code', 'Code block', '代码块'].includes(labelTextOf(block))) return false
   let value: unknown
@@ -358,6 +359,7 @@ export function setDomRootFactory(factory: (container: HTMLElement) => Root): vo
  *    `dom:unknown:<ordinal>` (see `fenceIndexOf`/`contextOf`).
  */
 const FLOW_ROW = '[data-chat-flow-key], [data-chat-flow-kind]'
+const ASSISTANT_FLOW_ROW = '[data-chat-flow-kind="assistant-step"]'
 function rowOf(block: Element): Element {
   return block.closest('[data-chat-anchor-key]') ?? block.closest(FLOW_ROW) ?? block
 }
@@ -582,7 +584,7 @@ export function installDomFenceRenderer(
     const language = infostringOf(block)
     const raw = rawOf(block)
     // DSH 0.1.7 可能丢失围栏 language metadata，最终显示通用 Code。
-    // 显式 language 始终优先，正文识别不能覆盖已有的语言信息。
+    // DOM 可识别的显式 language 始终优先；不可识别的语言无法从最终 DOM 恢复。
     const genericGenui = settled && language === null && isGenericGenuiFence(block, raw)
     if (settled && language === null && !genericGenui) return
     if (!settled && language === null && labelTextOf(block) !== '') return
@@ -711,7 +713,7 @@ export function installDomFenceRenderer(
         unmountBlock(block)
         continue
       }
-      // 流式结束后仍以显式 language 为准；通用 Code 每次正文变化均需完整校验。
+      // 流式结束后仍以 DOM 可识别的 language 为准；通用 Code 每次正文变化均需完整校验。
       if (settled && mount.language !== 'svg') {
         const labelText = labelTextOf(block)
         if (labelText !== '' && labelText !== 'dsh-ui' && !isGenericGenuiFence(block, raw)) {

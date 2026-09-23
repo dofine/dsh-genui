@@ -459,6 +459,8 @@ try {
 
     // 在 DSH 0.1.7 的通用 CodeToolbar DOM 结构中验证实际安装包。
     await page.evaluate(() => {
+      const assistantRow = document.createElement('div')
+      assistantRow.setAttribute('data-chat-flow-kind', 'assistant-step')
       const cases = [
         ['valid', '代码块', '{"items":[{"type":"text","content":"通用代码块验收"}]}'],
         ['ordinary', '代码块', '{"message":"ordinary JSON"}'],
@@ -484,8 +486,9 @@ try {
         content.appendChild(pre)
         block.append(banner, content)
         fixture.appendChild(block)
-        document.body.appendChild(fixture)
+        assistantRow.appendChild(fixture)
       }
+      document.body.appendChild(assistantRow)
     })
     await page.locator('[data-generic-valid] [data-genui]').waitFor({ state: 'visible' })
     assert.ok((await page.locator('[data-generic-valid] [data-genui]').textContent()).includes('通用代码块验收'))
