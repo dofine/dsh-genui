@@ -57,6 +57,10 @@ import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts
 import css from './GenuiBlock.module.css'
 import { renderSvgFence } from './svg-fence.tsx'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
+import { resolveViewedSessionId } from './session-resolver.ts'
+import { validateCanonicalGenuiSpec } from './guard.ts'
+import { diagnoseUnknownGenuiFields } from './genui-runtime/diagnostics.ts'
+import { normalizeGenuiSpec } from './genui-runtime/normalize.ts'
 
 /** Fence surfaces the channel can take over, newest host first: the shared
  * CodeBlock surface every rc.6+ markdown fence renders through
@@ -193,6 +197,26 @@ function labelTextOf(block: Element): string {
     return el.textContent?.trim() ?? ''
   }
   return ''
+}
+
+/** 仅在通用 CodeBlock 的完整 JSON 通过现有 GenUI 规范时恢复丢失的围栏语言。
+ *
+ * @param block - 宿主提供的代码块元素。
+ * @param raw - 未修改的围栏正文。
+ * @returns 正文能按原有 GenUI 规范直接识别时返回 true。
+ */
+function isGenericGenuiFence(block: Element, raw: string): boolean {
+  if (block.closest(ASSISTANT_FLOW_ROW) === null) return false
+  if (infostringOf(block) !== null || !block.querySelector('[data-code-block-banner]')) return false
+  if (!['Code', 'Code block', '代码块'].includes(labelTextOf(block))) return false
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  if (!validateCanonicalGenuiSpec(value).ok || diagnoseUnknownGenuiFields(value).length > 0) return false
+  return JSON.stringify(normalizeGenuiSpec(value).value) === JSON.stringify(value)
 }
 
 /** Raw fence body from the stock block's code surface. */
@@ -335,22 +359,21 @@ export function setDomRootFactory(factory: (container: HTMLElement) => Root): vo
  *    `dom:unknown:<ordinal>` (see `fenceIndexOf`/`contextOf`).
  */
 const FLOW_ROW = '[data-chat-flow-key], [data-chat-flow-kind]'
+const ASSISTANT_FLOW_ROW = '[data-chat-flow-kind="assistant-step"]'
 function rowOf(block: Element): Element {
   return block.closest('[data-chat-anchor-key]') ?? block.closest(FLOW_ROW) ?? block
 }
 
-/** 1-based ordinal of this block among the row's settled dsh-ui blocks
- * (document order). Streaming candidates are skipped, so the ordinal stays
- * stable while the block itself is still streaming. When the fallback chain
- * bottoms out at the block itself (no owning row in the DOM at all), the
- * ordinal falls back to document order among ALL settled dsh-ui blocks so
- * sibling fences never collide on the same `dom:unknown:N` identity. */
+/** 1-based ordinal of this block among settled dsh-ui blocks in its identity
+ * scope. Streaming candidates are skipped, so the ordinal stays stable while
+ * the block itself is still streaming. Anchor-less rows share the document
+ * scope so fences from different messages cannot reuse `dom:unknown:N`. */
 function fenceIndexOf(row: Element, block: Element): number {
-  const scope = row === block ? document : row
+  const scope = row.getAttribute('data-chat-anchor-key') === null ? document : row
   let index = 0
   for (const candidate of findFenceCandidates(scope)) {
     if (candidate.closest(STREAMING) !== null) continue
-    if (infostringOf(candidate) !== 'dsh-ui') continue
+    if (infostringOf(candidate) !== 'dsh-ui' && !isGenericGenuiFence(candidate, rawOf(candidate))) continue
     index += 1
     if (candidate === block) return index
   }
@@ -414,7 +437,7 @@ export function installDomFenceRenderer(
 
   const sessionIdOf = (): SessionId | undefined => {
     try {
-      return ctx.sessions.list.getSnapshot().current
+      return resolveViewedSessionId(ctx.sessions.list.getSnapshot())
     } catch {
       return undefined
     }
@@ -481,7 +504,7 @@ export function installDomFenceRenderer(
   function renderDiagnostic(block: HTMLElement, raw: string): void {
     // Nothing to report (renderable, empty, or still streaming): never leave
     // an empty strip behind, and drop one that is no longer true.
-    if (describeFenceFailure(raw) === null) {
+    if (describeFenceFailure(raw, { settled: true }) === null) {
       clearDiagnostic(block)
       return
     }
@@ -501,7 +524,7 @@ export function installDomFenceRenderer(
     let root: Root
     try {
       root = domRootFactory(container)
-      root.render(<FenceDiagnostic raw={raw} />)
+      root.render(<FenceDiagnostic raw={raw} settled />)
     } catch (error) {
       container.remove()
       warnOnce(block, `failed to mount the dsh-ui diagnostic (${error instanceof Error ? error.message : String(error)}); keeping the stock code block visible`)
@@ -532,20 +555,40 @@ export function installDomFenceRenderer(
     console.warn(`[dsh-genui] ${message}`)
   }
 
+  /**
+   * 通过当前宿主会话发送 DOM 通道 action。
+   *
+   * @param block - 触发 action 的围栏元素
+   * @param action - 组件声明的 action 名称
+   * @param payload - 组件产生的交互数据
+   */
+  function sendActionForBlock(block: Element, action: string, payload: Record<string, unknown>): void {
+    const sessionId = sessionIdOf()
+    if (sessionId === undefined) {
+      warnOnce(block, `cannot resolve the viewed session; action "${action}" was not sent`)
+      return
+    }
+    sendAction(sessionId, action, payload)
+  }
+
   function renderBlock(block: HTMLElement): void {
     if (block.hasAttribute(PROCESSED)) return
     const row = rowOf(block)
     const settled = isSettled(block)
-    // Settled blocks must carry the dsh-ui label. Streaming blocks cannot:
+    // 已完成的代码块通常带有 dsh-ui 标签；流式代码块可能没有标签：
     // the host renders the language label only once the reply settles
     // (MarkdownText passes `lang={streaming ? undefined : lang}`), so during
     // streaming the fence is identified by CONTENT — a partial parse that
     // yields a GenUI node. A misidentified fence (e.g. a ```json block that
     // happens to parse) is reverted at the settle transition below.
     const language = infostringOf(block)
-    if (settled && language === null) return
-    if (!settled && language === 'svg') return
     const raw = rawOf(block)
+    // DSH 0.1.7 可能丢失围栏 language metadata，最终显示通用 Code。
+    // DOM 可识别的显式 language 始终优先；不可识别的语言无法从最终 DOM 恢复。
+    const genericGenui = settled && language === null && isGenericGenuiFence(block, raw)
+    if (settled && language === null && !genericGenui) return
+    if (!settled && language === null && labelTextOf(block) !== '') return
+    if (!settled && language === 'svg') return
     if (raw.trim() === '') {
       if (settled) warnOnce(block, `settled ${language ?? 'dsh-ui'} fence has an empty body; keeping the code block`)
       return
@@ -586,11 +629,7 @@ export function installDomFenceRenderer(
       return
     }
     try {
-      const handler: GenuiActionHandler = (action, payload) => {
-        const sid = sessionIdOf()
-        if (sid === undefined) return
-        sendAction(sid, action, payload)
-      }
+      const handler: GenuiActionHandler = (action, payload) => sendActionForBlock(block, action, payload)
       root.render(<GenuiActionContext.Provider value={handler}>{payload}</GenuiActionContext.Provider>)
     } catch (error) {
       try {
@@ -674,13 +713,10 @@ export function installDomFenceRenderer(
         unmountBlock(block)
         continue
       }
-      // Settle transition label re-verification: a streaming block was taken
-      // over by content, not by label. If the now-visible label exists and is
-      // NOT dsh-ui (a ```json fence that happened to parse), restore the
-      // stock block and drop the mount.
-      if (settled && !mount.lastSettled) {
+      // 流式结束后仍以 DOM 可识别的 language 为准；通用 Code 每次正文变化均需完整校验。
+      if (settled && mount.language !== 'svg') {
         const labelText = labelTextOf(block)
-        if (labelText !== '' && labelText !== 'dsh-ui') {
+        if (labelText !== '' && labelText !== 'dsh-ui' && !isGenericGenuiFence(block, raw)) {
           // A content-identified fence settled as another language (e.g. a
           // ```json block that happened to parse): restore the stock block.
           unmountBlock(block)
@@ -725,10 +761,7 @@ export function installDomFenceRenderer(
           block.after(fresh)
           try {
             const freshRoot = domRootFactory(fresh)
-            const handler: GenuiActionHandler = (action, payload) => {
-              const sid = sessionIdOf()
-              if (sid !== undefined) sendAction(sid, action, payload)
-            }
+            const handler: GenuiActionHandler = (action, payload) => sendActionForBlock(block, action, payload)
             freshRoot.render(<GenuiActionContext.Provider value={handler}>{node}</GenuiActionContext.Provider>)
             mount.root = freshRoot
             mount.container = fresh
@@ -744,10 +777,7 @@ export function installDomFenceRenderer(
           }
         } else {
           try {
-            mount.root.render(<GenuiActionContext.Provider value={(action, payload) => {
-              const sid = sessionIdOf()
-              if (sid !== undefined) sendAction(sid, action, payload)
-            }}>{node}</GenuiActionContext.Provider>)
+            mount.root.render(<GenuiActionContext.Provider value={(action, payload) => sendActionForBlock(block, action, payload)}>{node}</GenuiActionContext.Provider>)
           } catch (error) {
             // Never leave the stock block hidden behind a broken root: restore
             // the raw code block and drop the mount (issue #19).

@@ -14,12 +14,25 @@
 
 ## [Unreleased]
 
+### 兼容性
+
+- 增加 DSH `^0.1.7-alpha.1` 支持；真实宿主验收覆盖 `dsh-v0.1.7-alpha.1` 与 `dsh-v0.1.7-alpha.2`。
+- 保留 DSH `0.1.2-rc.1` 最低兼容基线检查。
+- 增加新版 DSH API 编译检查，确保宿主公开类型变化能够在发布前被发现。
+- 适配新版 `CommandClaim.name` 与 ui-primitives 箭头图标导出变化。
+- 适配 `0.1.7-alpha.2` 的 `DiffBlockLabels` 工具栏文案。
+- 适配 `0.1.7-alpha.2` 代码块丢失 `dsh-ui` language metadata 的情况：仅在 assistant 消息行内对通用 CodeBlock 的完整 JSON 执行原有 GenUI 规范校验；仍可从 DOM 读取的 language 标签优先。不支持语法高亮的 language 会与通用标签合并，DOM 无法还原其原始值。
+
 ### 新增
 - **ECharts 词云**：`echart` 节点新增 `preset: "wordCloud"`，`data:[{label,value}]` 的 value 即权重，颜色按序循环 `palette`（缺省跟随主题调色板）；`option` 模式同步注册 `echarts-wordcloud` 扩展，`series[].type: "wordCloud"` 直接可用。完整版引擎新增约 30 KB（#183）。
 - **SVG 图形组件**：`{"type":"svg","code":"<svg …/>"}`（`title`/`height` 可选）以隔离图片模式渲染模型输出的独立 SVG——脚本注入、宿主样式污染在结构上被排除；解析失败或加载失败时保留源码并显示提示（#183）。
 - **裸 `svg` 围栏自动预览**：模型直接输出 ` ```svg ` 代码围栏（不带 `dsh-ui` 包装）时，落定后自动显示为图形预览，带「预览/源码」切换，源码可复制；流式生成中保持原样，不闪错误；仅接管语言标签明确为 `svg` 的围栏，其他语言代码块不受影响。registry 与 DOM 两条渲染通道均已接入（#183）。
 
 ### 修复
+- **dsh-ui 最终围栏反馈默认开启**：回合结束时直接检查 assistant message 的最终围栏正文，并与浏览器 renderer 共用 JSON 修复、组件归一化和坏节点清理流程；无法渲染时在同一回合请求模型修正，`fenceFeedback: false` 可关闭（#200）。
+- **Tetris 形 table columns 不再让围栏退化成代码块**：模型把表头数组提前闭合、又把行矩阵写成 `columns` 的**兄弟数组元素**（`"columns":["a","b"],["rows":[[…]]]` 或 `"columns":["a","b"],[["1","2"]]`）。这类正文两侧括号是**配平**的，所以 tier-2 的补括号扫描救不回来；现在 tier-2 先做一次形状重写（把该兄弟数组收编为 `"rows":[…]`、并丢弃错位留下的多余闭合符），整串 parse 通过才采纳。四个真实会话 130 条围栏的未渲染数从 1 归零（#192）。
+- **兼容新版 DSH 会话快照**：DOM 通道在宿主移除 `sessions.list.current` 后，改用 `byId[*].retainedBy.mainView` 解析当前会话，恢复 action 回传、状态持久化和 `panel:true` 发布，并在无法解析会话时输出一次诊断（#196）。
+- **降低 GenUI 模型反馈导致的回复语言漂移**：强化会话语言规则，将高诱导性的用户可见示例替换为 `<user-language ...>` 占位符，并将 validator / fence repair 的模型反馈改为语言中立的结构化协议（#165）。
 - **离散交互不再被防抖合并**：`button` / `checkbox` / `radio` / `switch` / `select` / `input` / `textarea` / `submit` / `quiz` 等一次手势一次事件的交互**立即逐次回传**。此前 300ms 防抖以 action 名为 key，快速连点同 action 名的控件会静默丢弃前几次事件，模型收到残缺交互状态，与 SKILL.md 承诺的 checkbox「默认保持逐次 action 行为」矛盾（#178）。
 - `slider` 拖拽保留防抖合并，且 key 从「action 名」改为「action 名 + `id`」：同一滑块的连续拖动仍合并成最后一次的值，多个共享 action 名的滑块互不挤占（#178）。
 

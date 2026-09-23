@@ -5,6 +5,8 @@ node_modules/
 # runs a build — so the committed build output is what users load.
 .e2e-artifacts/
 .e2e-artifacts-*/
+.compat-host-*/
+.compat-check-*/
 .playwright-cli/
 # macOS Finder metadata (never source)
 .DS_Store

@@ -104,6 +104,7 @@ The plugin ships **two rendering channels** and picks one automatically after th
 
 - **Registry channel**: when the host exposes the `fence-registry` extension point (newer dsh builds), fences register through the host's streaming render pipeline and behave seamlessly with the host;
 - **DOM channel**: when the host lacks that extension point (including supported stock DSH builds), the plugin observes the session DOM and mounts its own render tree. Since 0.7.2 it **supports streaming rendering**: components appear as the model writes them — the first finished component shows up immediately, no need to wait for the whole reply. Since 0.8.3 fence discovery is **multi-surface**: it matches the stock `md-code-block` surface, the deepsuite-style `.code-block` / `.code-block-small` surfaces some host builds render instead, and — as a structural backstop — any element whose banner labels it `dsh-ui` and contains a `<pre>` body. If your dsh build renders fences with a different class name, they still render (and a one-time console warning tells you the host DOM drifted).
+- **DSH 0.1.7 generic code banner**: inside assistant conversation rows, when the host omits fenced-code language metadata and shows a generic CodeBlock, the DOM channel recognizes only complete JSON documents that pass the existing GenUI schema validation. A language label still visible in the DOM takes priority. The host maps unsupported languages to the same generic label, so the DOM cannot distinguish those fences from unlabeled GenUI content.
 
 Whichever channel is active, components, interactions, panels, and persistence behave identically.
 
@@ -122,7 +123,7 @@ The repository ships both renderer channels, the host plugin, and the built brow
 
 Prerequisites — all required:
 
-1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`**
+1. **dsh `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1`** (verified host tags: `dsh-v0.1.2-rc.1`, `dsh-v0.1.7-alpha.1`, and `dsh-v0.1.7-alpha.2`; users on DSH `<=0.1.1-rc.x` should use dsh-genui `0.9.8`)
 2. **`pnpm` on your PATH**: the `dsh plugin` command depends on it. If missing: `corepack enable` (or `npm i -g pnpm`), then **open a new terminal** and confirm `pnpm -v` prints a version
 
 Install and activate in DSH (one command, all dependencies included):
@@ -186,7 +187,7 @@ The following is the detailed capability reference. Every behavior is constraine
 - **Event loop**: buttons/switches/inputs/dropdowns/checkboxes/radios/textareas/quizzes carry `action`; click or blur sends back to the model, which updates the UI; same-name actions are debounced with a 300 ms trailing edge — rapid clicks merge into one (last value wins)
 - **Tool channel**: the `render_ui` tool renders the same spec as a card in the tool row (deliverable-style UI goes through the tool, answer-style UI through the fence)
 - **Session panel**: a persistent dock above the composer; `render_ui` / `panel: true` fences update the same surface in place; `/panel` opens it from the client (`/panel <instruction>` customizes via the model, `/panel clear` clears); the top border is draggable to resize; `append: true` merges incrementally — same-named tabs append content, new tabs get added; the whole panel caps at 200 nodes / 200 appends, after which the model should send `replace` to rebuild
-- **Fence auto-repair (opt-in)**: set `fenceFeedback: true` in this plugin's config (under the plugin entry's `config:` in your profile's cordis.patch.yml) — when a reply's dsh-ui fence fails to render, the plugin steers the SAME turn with the per-node diagnosis so the model can resend a fixed fence; at most one correction per turn and per fence, never in subagents, so it cannot loop. Off by default: retries spend model steps, which is the operator's call.
+- **Fence auto-repair**: enabled by default; set `fenceFeedback: false` in this plugin's config (under the plugin entry's `config:` in your profile's cordis.patch.yml) to disable it. When a reply's final dsh-ui fence fails to render, the plugin steers the SAME turn with the per-node diagnosis so the model can resend a fixed fence; at most one correction per turn and per fence, never in subagents, so it cannot loop.
 - **Self-healing & limits**: every fence passes a spec guard — bad nodes are silently dropped (the surviving siblings keep rendering: one bad component no longer degrades the whole fence), numbers clamped, strings truncated; the whole tree is capped at 200 nodes / 8 nesting levels; pathological specs never crash the UI
 - **Canonical component protocol**: native field aliases such as `card.label` → `title`, `table.data`/`table.items` → `rows`, `callout.kind`/`callout.desc` → `tone`/`content` (tone value `danger` → `error`), `steps.items` → `steps`, `keyvalue.items` → `pairs` (record `label` → `key`), and `file-tree.nodes` → `items` (record `label` → `name`, `type` defaults to `dir` when children exist) are normalized deterministically before validation and rendering. A root-level component array is adopted as `items`, and a double-encoded JSON string is decoded once. `validate_dsh_ui` reports these normalizations and warns about unknown native fields without blocking custom renderer nodes.
 - **Chart error self-healing**: mermaid failures auto-retry with repairs (strip backticks, quote Chinese/space labels, remove `<br/>`) before degrading to source; a broken chart never hits the screen
@@ -233,7 +234,7 @@ The core render package stays light (≈110 KB min / 28 KB gzip); the mermaid, t
 ## ❓ FAQ
 
 - **Rendering as a code block?** First check the browser console for `[genui] client active; fence-channel=registry|dom`. If absent, the client bundle was not activated even if its URL returns 200 — align the profile dependency, `package.json.name`, `cordis.patch.yml`, ModuleLoader id, and configured bundle name. If present, inspect the fence label/body; registry-less hosts automatically use the DOM channel.
-- **Chat UI goes blank when rendering a dsh-ui fence?** This plugin requires DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1`.
+- **Chat UI goes blank when rendering a dsh-ui fence?** This dsh-genui release requires DSH `^0.1.2-rc.1 || ^0.1.5-alpha.1 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1`; users on DSH `<=0.1.1-rc.x` should use dsh-genui `0.9.8`.
 - **`dsh: pnpm not found on PATH`?** Install pnpm, then **open a new terminal** and retry (`corepack enable` or `npm i -g pnpm`).
 - **Installed but scene3d/mermaid/echarts don't render?** The engine assets (mermaid / three / echarts / flint) are not inlined in client.js — they load on demand the first time they're used (`/plugins/dsh-genui-charts/assets/*.js`, hosted by the plugin's own HTTP routes). First restart dsh web + hard refresh (Cmd+Shift+R); still broken, reinstall it (`dsh plugin --profile web remove dsh-genui-charts`, then `dsh plugin --profile web add github:dofine/dsh-genui`). Hosts without the asset routes degrade to source/load-error hints — update dsh.
 - **Model not outputting fences?** New sessions pick it up after a restart; or just say "output it with dsh-ui".
@@ -247,6 +248,8 @@ pnpm run check   # type check + full tests + build
 ```
 
 With the locked dependencies installed, the check script (`pnpm run check` or `npm run check`) uses the pinned DSH `0.1.2-rc.1` release packages.
+
+`pnpm run check:host-api dsh-v0.1.7-alpha.1` and `pnpm run check:host-api dsh-v0.1.7-alpha.2` install the corresponding published DSH packages in an isolated workspace and run TypeScript typecheck plus tsdown build. CI runs both checks before packed host smoke tests.
 
 Run `node scripts/verify-pack.mjs --keep` to retain the verified tarball for inspection or e2e use. The default `node scripts/verify-pack.mjs` removes its temporary directory after verification.
 
