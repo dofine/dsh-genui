@@ -67,6 +67,17 @@ export declare function countRenderedNativeGenuiNodes(value: unknown, cap?: numb
  */
 export declare function validateGenuiChartSemantics(value: unknown): string[];
 /**
+ * Validate a raw spec value against the white list and limits, collecting
+ * human-readable problems. Unlike repair this never mutates: it is a
+ * diagnostic for tests and tooling. Unknown `type`s are reported (a plugin
+ * custom type is valid only when a renderer is registered — the guard cannot
+ * know, so it flags them as warnings).
+ *
+ * @param value - 未经过别名转换的 GenUI 文档。
+ * @returns 完整结构与字段校验结果。
+ */
+export declare function validateCanonicalGenuiSpec(value: unknown): GenuiValidation;
+/**
  * Validate a raw GenUI value after deterministic alias normalization.
  *
  * Validation therefore only sees canonical fields; repairable aliases do not

@@ -18,11 +18,6 @@
  * @module dsh-genui-charts/plugin/tool
  */
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
-import type { GenuiProcessResult } from '../client/guard.ts';
-/** Report dropped components without hiding their actionable field errors.
- *  Exported for the fence feedback loop (#160), so a steered correction quotes
- *  exactly what the validator tool reports. */
-export declare function droppedNodeFailure(processed: GenuiProcessResult, raw: unknown): string | undefined;
 /**
  * Build the render_ui tool definition. Registered by the plugin node half;
  * `ctx.tools.register` consumes it exactly like a `defineTool` result.

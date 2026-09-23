@@ -54,9 +54,12 @@ export interface GenuiFenceContext {
  * renderable, or it is an empty/streaming half).
  *
  * @param raw - the raw fence body.
+ * @param options - whether settled-only structural repair may be used.
  * @returns the diagnostic text, or null.
  */
-export declare function describeFenceFailure(raw: string): string | null;
+export declare function describeFenceFailure(raw: string, options?: {
+    settled?: boolean;
+}): string | null;
 /**
  * The visible diagnostic for a settled, unrenderable ```dsh-ui body.
  *
@@ -68,8 +71,9 @@ export declare function describeFenceFailure(raw: string): string | null;
  * @param raw - the raw fence body.
  * @returns the alert strip, or null when the body has nothing to report.
  */
-export declare function FenceDiagnostic({ raw }: {
+export declare function FenceDiagnostic({ raw, settled }: {
     raw: string;
+    settled?: boolean;
 }): ReactNode;
 /**
  * Resolve a raw fence body to a guarded spec.

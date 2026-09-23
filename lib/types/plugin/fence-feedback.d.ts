@@ -7,8 +7,7 @@
  * fence while the user is still looking at the raw JSON.
  *
  * The loop is deliberately narrow, matching the contract agreed on the issue:
- * - **Opt-in.** `fenceFeedback: true` in this plugin's config; a host that does
- *   not ask for it never steers anything.
+ * - **默认开启。** 插件配置中的 `fenceFeedback: false` 可以关闭回合转向。
  * - **Bounded.** At most one correction per turn AND at most one per fence
  *   body per process, so a correction that is itself wrong cannot loop.
  * - **Never for subagents.** A child session's fence belongs to a parent reply.
@@ -19,10 +18,8 @@
  *   so a re-entrant boundary cannot deliver the same correction twice.
  * - **Cancellation-aware.** An aborted turn or a missing session is left alone.
  *
- * Detection reuses the renderer's own pipeline (`parsePartialGenuiSpec` →
- * `processGenuiSpec` → `isRenderableProcess`) and the tool's model-facing
- * diagnosis, so the correction quotes the same field errors the validator
- * reports.
+ * 检查会复用 renderer 在回合结束后的流程，包括 JSON 修复和坏节点清理；
+ * 已经可以渲染的最终回复不会收到修正请求。
  * @module dsh-genui-charts/plugin/fence-feedback
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -104,7 +101,7 @@ export interface FenceFeedbackPlan {
  */
 export declare function planFenceFeedback(input: FenceFeedbackPlanInput): FenceFeedbackPlan | null;
 /**
- * Install the opt-in fence feedback loop.
+ * 根据插件配置启用围栏反馈流程。
  *
  * @param ctx - the host context.
  * @param enabled - the plugin config flag; the loop is inert when false.

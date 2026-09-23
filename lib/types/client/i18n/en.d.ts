@@ -238,6 +238,9 @@ export declare const EN: {
     readonly 'label.copiedShort': "✓ Copied";
     readonly 'label.copiedToClipboard': "Copied to clipboard";
     readonly 'label.copyFailed': "Copy failed";
+    readonly 'label.code': "Code";
+    readonly 'label.wrap': "Wrap lines";
+    readonly 'label.unwrap': "Unwrap lines";
     readonly 'label.collapse': "Collapse";
     readonly 'label.collapseDiff.aria': "Collapse diff";
     readonly 'label.expandDiff.aria': "Show the remaining {hidden} diff lines";
