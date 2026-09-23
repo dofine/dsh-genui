@@ -116,6 +116,54 @@ describe('EChartNode: option vs preset', () => {
   })
 })
 
+describe('EChartNode: raw option host theming', () => {
+  const capture = async (option: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    let captured: unknown
+    vi.mocked(createChart).mockImplementation((_el, opt) => {
+      captured = opt
+      return Promise.resolve(fakeInstance())
+    })
+    render(<EChartNode node={{ type: 'echart', option }} />)
+    await vi.waitFor(() => { expect(captured).toBeDefined() }, { timeout: 3000 })
+    return captured as Record<string, unknown>
+  }
+
+  it('fills the host defaults an ECharts canvas cannot inherit', async () => {
+    // The regression: a raw option bypassed the theme pass, so a model-authored
+    // chart painted ECharts' light-theme defaults on the host's dark surface.
+    const opt = await capture({ title: { text: 't' } })
+    expect(opt.backgroundColor).toBe('transparent')
+    expect(opt.textStyle).toEqual({ color: expect.any(String), fontFamily: 'inherit' })
+    expect(Array.isArray(opt.color)).toBe(true)
+    expect((opt.color as unknown[]).length).toBeGreaterThan(0)
+  })
+
+  it('never overrides an explicit model value', async () => {
+    const opt = await capture({
+      backgroundColor: '#112233',
+      color: ['#ff0000'],
+      textStyle: { color: '#123456', fontFamily: 'serif' },
+      tooltip: { backgroundColor: '#654321', borderColor: '#000000', textStyle: { color: '#abcdef' } },
+    })
+    expect(opt.backgroundColor).toBe('#112233')
+    expect(opt.color).toEqual(['#ff0000'])
+    expect(opt.textStyle).toEqual({ color: '#123456', fontFamily: 'serif' })
+    const tooltip = opt.tooltip as Record<string, unknown>
+    expect(tooltip.backgroundColor).toBe('#654321')
+    expect(tooltip.borderColor).toBe('#000000')
+    expect(tooltip.textStyle).toEqual({ color: '#abcdef' })
+  })
+
+  it('themes a declared tooltip surface without dropping its other fields', async () => {
+    const opt = await capture({ tooltip: { trigger: 'axis' } })
+    const tooltip = opt.tooltip as Record<string, unknown>
+    expect(tooltip.trigger).toBe('axis')
+    expect(typeof tooltip.backgroundColor).toBe('string')
+    expect(typeof tooltip.borderColor).toBe('string')
+    expect(tooltip.textStyle).toEqual({ color: expect.any(String) })
+  })
+})
+
 describe('EChartNode: title and height', () => {
   it('renders title when provided', async () => {
     vi.mocked(createChart).mockImplementation(() => Promise.resolve(fakeInstance()))

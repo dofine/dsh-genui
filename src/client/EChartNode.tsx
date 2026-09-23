@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import css from './GenuiBlock.module.css'
 import { CORE_PRESETS, createChart as lazyCreateChart, type EChartsInstance } from './echarts-lazy.ts'
 import { CHART_COLORS } from './blocks/charts.tsx'
+import { obj } from './genui-runtime/value-utils.ts'
 import type { GenuiEChart } from './spec.ts'
 
 /** Which engine bundle this node needs (progressive disclosure). */
@@ -68,6 +69,58 @@ function themeColors(el?: HTMLElement | null): {
     border: readToken('--dsw-alias-border-l1', 'rgba(255,255,255,0.12)', el),
     bgLayer1: readToken('--dsw-alias-bg-layer-1', '#1a1a1e', el),
   }
+}
+
+/**
+ * Host-theme defaults for a model-authored raw option.
+ *
+ * An ECharts canvas resolves neither `var(--x)` strings nor inherited CSS, so
+ * the palette, the text style, and the tooltip surface are resolved to
+ * literals before the engine sees them; a raw option would otherwise paint
+ * ECharts' light-theme defaults on the host's dark surface. Only MISSING
+ * fields are filled, so an explicit model value always wins.
+ *
+ * This adds no security field: the guard already forces
+ * `tooltip.renderMode: 'richText'` on every tooltip object.
+ *
+ * @param option - the guard-sanitized model option.
+ * @param el - the chart's own container, so tokens resolve wherever the host defines them.
+ * @returns the option with the host's missing theme defaults applied.
+ */
+function withHostTheme(option: Record<string, unknown>, el?: HTMLElement | null): Record<string, unknown> {
+  const t = themeColors(el)
+  let out = option
+  if (!Array.isArray(out.color)) {
+    out = {
+      ...out,
+      color: CHART_COLORS.map((c, i) =>
+        readToken(c.replace('var(', '').replace(')', ''), SERIES_FALLBACK[i % SERIES_FALLBACK.length]!, el)),
+    }
+  }
+  if (out.backgroundColor === undefined) out = { ...out, backgroundColor: 'transparent' }
+  const textStyle = obj(out.textStyle)
+  if (textStyle === undefined || textStyle.color === undefined || textStyle.fontFamily === undefined) {
+    out = {
+      ...out,
+      textStyle: {
+        ...(textStyle ?? {}),
+        ...(textStyle?.color === undefined ? { color: t.labelSecondary } : {}),
+        ...(textStyle?.fontFamily === undefined ? { fontFamily: 'inherit' } : {}),
+      },
+    }
+  }
+  const tooltip = obj(out.tooltip)
+  if (tooltip !== undefined) {
+    const themed: Record<string, unknown> = { ...tooltip }
+    if (themed.backgroundColor === undefined) themed.backgroundColor = t.bgLayer1
+    if (themed.borderColor === undefined) themed.borderColor = t.border
+    const tooltipText = obj(themed.textStyle)
+    if (tooltipText === undefined || tooltipText.color === undefined) {
+      themed.textStyle = { ...(tooltipText ?? {}), color: t.labelPrimary }
+    }
+    out = { ...out, tooltip: themed }
+  }
+  return out
 }
 
 /** Build a full ECharts option from a preset + the simple data/series shape.
@@ -398,8 +451,9 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
     const el = ref.current
     if (el === null) return
 
-    // Full `option` wins over preset shorthand.
-    const option = node.option ?? presetOption(node, el)
+    // Full `option` wins over preset shorthand. A raw option carries no host
+    // theme of its own, so its missing defaults are filled here.
+    const option = node.option === undefined ? presetOption(node, el) : withHostTheme(node.option, el)
 
     void lazyCreateChart(el, option, { height: node.height ?? 300 }, neededEngine(node)).then((inst) => {
       if (!alive) {
@@ -440,7 +494,7 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
   // returned early when status was 'loading' and never re-run).
   useEffect(() => {
     if (status !== 'ready' || instanceRef.current === null) return
-    const option = node.option ?? presetOption(node, ref.current)
+    const option = node.option === undefined ? presetOption(node, ref.current) : withHostTheme(node.option, ref.current)
     instanceRef.current.setOption(option, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node, status])
