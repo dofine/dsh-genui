@@ -1,5 +1,5 @@
 // Issue #160：回复中的 ```dsh-ui 围栏无法渲染时，模型应能在同一 turn 内收到可执行的修正要求。
-// 这些测试固定了修正边界：精确匹配围栏、共享 correction 上限、每个 fence body 最多一次，
+// 这些测试固定了修正边界：精确匹配围栏、共享 correction 上限、每个 fence body 在当前回合最多一次，
 // 不处理 subagent 与已中止的 turn，并在调用 steer 前完成记账。
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -922,6 +922,36 @@ describe('GenUI reasoning-only stream recovery', () => {
 })
 
 describe('persisted fence feedback lifecycle', () => {
+  it.each([false, true])('allows the same broken fence in a new turn while preserving reload deduplication (reload=%s)', async (reload) => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.assistant(BROKEN)
+      h.boundary()
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(1)
+
+      h.startTurn(8)
+      if (reload) await h.reload()
+      h.assistant(BROKEN)
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+
+      await h.reload()
+      h.assistant(BROKEN)
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(3)
+      h.assistant('{"items":[{"type":"stat","label":"third"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(3)
+    } finally {
+      await h.dispose()
+    }
+  })
+
   it('keeps the two-correction cap across a real plugin reload and resets it for the next turn', async () => {
     const h = await persistedFeedbackHarness()
     try {

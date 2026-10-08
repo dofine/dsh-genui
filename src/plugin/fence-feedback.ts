@@ -9,7 +9,7 @@
  * The loop is deliberately narrow, matching the contract agreed on the issue:
  * - **默认开启。** 插件配置中的 `fenceFeedback: false` 可以关闭回合转向。
  * - **修正上限。** 每个 turn 最多发送两条 correction；render failure 和 delivery reminder 共用上限，
- *   每个 fence body 在当前进程中最多修正一次。
+ *   每个 fence body 在当前回合中最多修正一次，新回合可重新修正。
  * - **仅含 reasoning 的恢复。** 已验证的 GenUI 回合若只以 reasoning block 结束，使用宿主的
  *   `EMPTY_RESPONSE` retry policy。
  * - **Never for subagents.** A child session's fence belongs to a parent reply.
@@ -207,7 +207,7 @@ interface SessionFeedback {
    * steering at the boundary instead of being guessed about.
    */
   pendingRenders: Set<string>
-  /** Fence fingerprints already corrected for a RENDER failure. */
+  /** Fence fingerprints already corrected for a RENDER failure in the current turn. */
   correctedSpec: Set<string>
   /**
    * Turns already given the "nothing was delivered" reminder. Kept separate from
@@ -230,7 +230,7 @@ export interface FenceFeedbackPlanInput {
   /** Latest assistant reply text of the current turn. */
   readonly text: string
   readonly turn: number
-  /** Fence bodies already corrected for a render failure. */
+  /** Fence bodies already corrected for a render failure in the current turn. */
   readonly correctedSpec: ReadonlySet<string>
   /** Turns already given the delivery reminder. */
   readonly deliveryRemindedTurns?: ReadonlySet<number> | undefined
@@ -515,6 +515,8 @@ export function installFenceFeedback(ctx: Context, enabled: boolean): void {
       // only a fallback for direct prompts.
       const state = stateOf(sessionId)
       state.isSubagent = session.header.parentSession !== undefined
+      // 去重只约束当前回合，新一轮仍可修正相同错误。
+      state.correctedSpec.clear()
       resetTurnState(state, (event.data as { turn?: number }).turn)
       return
     }
