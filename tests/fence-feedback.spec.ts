@@ -3,7 +3,8 @@
 // 不处理 subagent 与已中止的 turn，并在调用 steer 前完成记账。
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { markAgentLoopRequest } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage, markAgentLoopRequest } from '@deepseek-ai/dsh-llm'
+import SessionStore from '@deepseek-ai/dsh-session'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -82,6 +83,7 @@ function streamHarness(options: { parentSession?: string; enabled?: boolean } = 
   const ctx = new Context()
   const session = {
     id: 'sess-1',
+    snapshotEvents: () => [],
     header: options.parentSession === undefined
       ? { id: 'sess-1' }
       : { id: 'sess-1', parentSession: options.parentSession },
@@ -97,6 +99,8 @@ function harness(options: { parentSession?: string; enabled?: boolean } = {}): H
   const listeners = new Map<string, (payload: unknown, ...rest: unknown[]) => unknown>()
   const ctx = {
     logger: { warn: vi.fn() },
+    reflect: { get: vi.fn() },
+    inject: vi.fn(),
     on: (name: string, handler: (payload: unknown, ...rest: unknown[]) => unknown) => {
       listeners.set(name, handler)
       return () => listeners.delete(name)
@@ -105,6 +109,7 @@ function harness(options: { parentSession?: string; enabled?: boolean } = {}): H
   installFenceFeedback(ctx, options.enabled ?? true)
   const session = {
     id: 'sess-1',
+    snapshotEvents: () => [],
     header: options.parentSession === undefined ? { id: 'sess-1' } : { id: 'sess-1', parentSession: options.parentSession },
   }
   const steer = vi.fn()
@@ -127,6 +132,58 @@ function harness(options: { parentSession?: string; enabled?: boolean } = {}): H
 
 const assistantEvent = (text: string): unknown => ({ type: 'assistant/message', seq: 3, time: 1, data: { message: { content: [{ type: 'text', text }] } } }) as unknown as SessionEvent
 const userEvent = (): unknown => ({ type: 'user/message', seq: 2, time: 1, data: { content: [{ type: 'text', text: '问题' }], source: { kind: 'user' } } }) as unknown as SessionEvent
+
+/** 用真实宿主会话持久化消息，并通过插件卸载、重新安装验证恢复。 */
+async function persistedFeedbackHarness() {
+  const ctx = new Context()
+  const sessionPlugin = await ctx.plugin(SessionStore)
+  const session = ctx.sessions.create('persisted-feedback')
+  const applyFeedback = (feedbackCtx: Context) => installFenceFeedback(feedbackCtx, true)
+  let feedback = await ctx.plugin(applyFeedback)
+  let turn = 7
+  const steer = vi.fn((message: ReturnType<typeof createFeedbackMessage>) => {
+    session.append('user/message', message, { surfaceOp: 'append' })
+  })
+  const agent = { session, steer }
+  return {
+    ctx,
+    session,
+    steer,
+    startTurn: (nextTurn = 7) => {
+      turn = nextTurn
+      session.append('turn/start', { turn })
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: '请展示界面' }], source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+    },
+    assistant: (body: string) => {
+      session.append('assistant/message', {
+        turn, step: 1,
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: reply(body) }], source: { provider: 'test', model: 'test' },
+        }),
+      }, { surfaceOp: 'append' })
+    },
+    validate: () => {
+      session.append('tool/call', {
+        turn, step: 1, callId: `validate-${session.seq}` as never, name: 'validate_dsh_ui', arguments: '{}',
+      })
+    },
+    boundary: () => ctx.emit('agent/turn-stopping', { agent: agent as never, turn, signal: new AbortController().signal }),
+    reload: async (duringReload?: () => void | Promise<void>) => {
+      await feedback.dispose()
+      const reloading = ctx.plugin(applyFeedback)
+      await Promise.resolve()
+      const pendingEvent = duringReload?.()
+      feedback = await reloading
+      await pendingEvent
+    },
+    dispose: async () => {
+      await feedback.dispose()
+      await sessionPlugin.dispose()
+    },
+  }
+}
 
 describe('exact fence matching', () => {
   it('extracts only a fence whose info string is exactly dsh-ui', () => {
@@ -659,6 +716,7 @@ describe('installFenceFeedback wiring', () => {
   it('restores render correction budget for a replayed turn and allows exactly one new fingerprint', () => {
     const h = harness()
     h.emitSession(turnStartEvent(9))
+    h.emitSession(userEvent())
     h.emitSession(feedbackMessageEvent('render-9-a', fenceCorrectionText(fenceFailures(reply(BROKEN)))))
     h.emitSession(assistantEvent(reply(BROKEN)))
     h.emitSession(toolCallEvent('validate_dsh_ui'))
@@ -860,5 +918,135 @@ describe('GenUI reasoning-only stream recovery', () => {
 
     const chunks = await collectChunks(h.stream(agentRequest(), reasoningOnly))
     expect((chunks.at(-1) as Extract<StreamChunk, { type: 'finish' }>).reason.kind).toBe('error')
+  })
+})
+
+describe('persisted fence feedback lifecycle', () => {
+  it('keeps the two-correction cap across a real plugin reload and resets it for the next turn', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.assistant(BROKEN)
+      h.boundary()
+      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+      await h.reload()
+      h.assistant('{"items":[{"type":"stat","label":"third"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+
+      h.startTurn(8)
+      h.assistant('{"items":[{"type":"stat","label":"new-turn"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(3)
+    } finally {
+      await h.dispose()
+    }
+  })
+
+  it('restores the correction cap before a new message arrives during plugin reload', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.assistant(BROKEN)
+      h.boundary()
+      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+
+      await h.reload(() => h.assistant('{"items":[{"type":"stat","label":"third"}]}'))
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+    } finally {
+      await h.dispose()
+    }
+  })
+
+  it('restores pending feedback before a turn boundary arrives during plugin reload', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.assistant(BROKEN)
+      await h.reload(() => h.boundary())
+      expect(h.steer).toHaveBeenCalledTimes(1)
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(1)
+    } finally {
+      await h.dispose()
+    }
+  })
+
+  it('keeps reasoning-only host recovery active for a model request during plugin reload', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.validate()
+      let chunks: StreamChunk[] = []
+      await h.reload(async () => {
+        chunks = await collectChunks(h.ctx.waterfall('llm/stream', agentRequest({ sessionId: h.session.id }), () => streamChunks([
+          { type: 'block-start', index: 0, blockType: 'reasoning' },
+          { type: 'reasoning-delta', index: 0, text: 'private reasoning draft' },
+          { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'private reasoning draft' } },
+          { type: 'finish', reason: { kind: 'stop' } },
+        ])))
+      })
+      expect(chunks.at(-1)).toMatchObject({
+        type: 'finish',
+        reason: { kind: 'error', failure: { code: 'EMPTY_RESPONSE' } },
+      })
+    } finally {
+      await h.dispose()
+    }
+  })
+
+  it('keeps a persisted delivery reminder silent after reload and shares the remaining slot with render feedback', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.validate()
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(1)
+      await h.reload()
+      h.validate()
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(1)
+
+      h.assistant(BROKEN)
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+      await h.reload()
+      h.assistant('{"items":[{"type":"stat","label":"third"}]}')
+      h.boundary()
+      expect(h.steer).toHaveBeenCalledTimes(2)
+    } finally {
+      await h.dispose()
+    }
+  })
+
+  it('adopts correction history when the host restores a session from its stored events', async () => {
+    const h = await persistedFeedbackHarness()
+    try {
+      h.startTurn()
+      h.assistant(BROKEN)
+      h.boundary()
+      h.assistant('{"items":[{"type":"stat","label":"second"}]}')
+      h.boundary()
+      const restored = h.ctx.sessions.create('restored-feedback', { seed: h.session.snapshotEvents() })
+      const steer = vi.fn()
+      restored.append('assistant/message', {
+        turn: 7, step: 1,
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: reply('{"items":[{"type":"stat","label":"third"}]}') }],
+          source: { provider: 'test', model: 'test' },
+        }),
+      }, { surfaceOp: 'append' })
+      h.ctx.emit('agent/turn-stopping', {
+        agent: { session: restored, steer } as never, turn: 7, signal: new AbortController().signal,
+      })
+      expect(steer).not.toHaveBeenCalled()
+    } finally {
+      await h.dispose()
+    }
   })
 })

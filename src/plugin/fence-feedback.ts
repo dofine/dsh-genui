@@ -28,8 +28,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionStore, UserMessage } from '@deepseek-ai/dsh-session'
 import { createHash, randomUUID } from 'node:crypto'
 import { droppedNodeFailure } from './genui-diagnostic.ts'
 import { resolveFence } from '../shared/fence-resolve.ts'
@@ -508,7 +507,7 @@ export function installFenceFeedback(ctx: Context, enabled: boolean): void {
     state.currentTurn = turn
   }
 
-  ctx.on('session/event', (session, event: SessionEvent) => {
+  const observeEvent = (session: Session, event: SessionEvent): void => {
     const sessionId = String(session.id)
     if (event.type === 'turn/start') {
       // The formal turn boundary: whatever happened in the previous turn is
@@ -582,9 +581,29 @@ export function installFenceFeedback(ctx: Context, enabled: boolean): void {
     const state = sessions.get(sessionId)
     if (state !== undefined) {
       state.isSubagent = session.header.parentSession !== undefined
-      resetTurnState(state, undefined)
+      // turn/start 先于用户消息；清掉正文状态时保留正式回合身份。
+      resetTurnState(state, state.currentTurn)
     }
+  }
+
+  const restoreHistory = (session: Session): void => {
+    if (sessions.has(String(session.id))) return
+    for (const event of session.snapshotEvents()) observeEvent(session, event)
+  }
+  ctx.on('session/event', (session, event) => {
+    // 服务注入是异步的；首条实时事件也先接管历史，避免丢失旧纠错次数。
+    restoreHistory(session)
+    observeEvent(session, event)
   })
+  ctx.on('session/created', restoreHistory)
+  const restoreSessions = (sessionCtx: Context): void => {
+    const store = sessionCtx.reflect.get('sessions') as SessionStore | undefined
+    if (store === undefined) return
+    for (const session of store.list()) restoreHistory(session)
+  }
+  // 宿主不重播历史；安装时同步接管已有会话，异步注入负责晚到的服务。
+  restoreSessions(ctx)
+  ctx.inject(['sessions'], restoreSessions)
 
   ctx.on('llm/stream', (options, next) => {
     if (options.sessionId === undefined || options.purpose !== undefined) return next()
