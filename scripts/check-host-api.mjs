@@ -14,10 +14,11 @@ const dshPackages = Object.keys(pkg.peerDependencies).filter(name => name.starts
 const checkRoot = await mkdtemp(join(tmpdir(), 'dsh-genui-host-api-'))
 
 try {
-  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'tsconfig.json', 'tsdown.config.ts']) {
+  for (const name of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'tsconfig.json', 'tsdown.config.ts', 'vitest.config.ts', 'SKILL.md']) {
     await cp(join(repoRoot, name), join(checkRoot, name))
   }
   await cp(join(repoRoot, 'src'), join(checkRoot, 'src'), { recursive: true })
+  await cp(join(repoRoot, 'tests'), join(checkRoot, 'tests'), { recursive: true })
 
   // pnpm 在隔离目录安装发布包，源码中的 import 由该目录的 node_modules 解析。
   execFileSync('pnpm', ['add', '--save-dev', '--save-exact', ...dshPackages.map(name => `${name}@${version}`)], { cwd: checkRoot, stdio: 'inherit' })
@@ -26,8 +27,9 @@ try {
     assert.equal(installed.version, version, `${name} 必须使用 ${version} 的公开类型`)
   }
   execFileSync('pnpm', ['exec', 'tsc', '-p', 'tsconfig.json'], { cwd: checkRoot, stdio: 'inherit' })
+  execFileSync('pnpm', ['exec', 'vitest', 'run', 'tests/fence-feedback.spec.ts', 'tests/plugin-genui.spec.ts'], { cwd: checkRoot, stdio: 'inherit' })
   execFileSync('pnpm', ['exec', 'tsdown'], { cwd: checkRoot, stdio: 'inherit' })
-  console.log(`${hostRef} API typecheck 与 tsdown build 通过`)
+  console.log(`${hostRef} API typecheck、插件生命周期测试与 tsdown build 通过`)
 } finally {
   await rm(checkRoot, { recursive: true, force: true })
 }

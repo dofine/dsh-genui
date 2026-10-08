@@ -16,13 +16,13 @@ jobs:
             host-ref: "dsh-v0.1.2-rc.1"
             role: minimum
           - node: 22
-            host-ref: "dsh-v0.1.7-rc.2"
-            role: current
-          - node: 24
-            host-ref: "dsh-v0.1.7-rc.2"
+            host-ref: "dsh-v0.2.0-rc.2"
             role: current
           - node: 24
             host-ref: "dsh-v0.2.0-rc.2"
+            role: current
+          - node: 24
+            host-ref: "dsh-v0.2.1-alpha.1"
             role: next
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -63,7 +63,7 @@ jobs:
         if: matrix.role == 'minimum'
         run: pnpm run build
 
-      - name: Check published host API (typecheck + build)
+      - name: Check published host API (typecheck + plugin lifecycle + build)
         if: matrix.role != 'minimum'
         run: pnpm run check:host-api "${{ matrix.host-ref }}"
 

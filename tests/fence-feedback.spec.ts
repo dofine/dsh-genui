@@ -158,7 +158,7 @@ async function persistedFeedbackHarness() {
     },
     assistant: (body: string) => {
       session.append('assistant/message', {
-        turn, step: 1,
+        turn, step: 1, stream: [],
         message: createAssistantMessage({
           content: [{ type: 'text', text: reply(body) }], source: { provider: 'test', model: 'test' },
         }),
@@ -1065,7 +1065,7 @@ describe('persisted fence feedback lifecycle', () => {
       const restored = h.ctx.sessions.create('restored-feedback', { seed: h.session.snapshotEvents() })
       const steer = vi.fn()
       restored.append('assistant/message', {
-        turn: 7, step: 1,
+        turn: 7, step: 1, stream: [],
         message: createAssistantMessage({
           content: [{ type: 'text', text: reply('{"items":[{"type":"stat","label":"third"}]}') }],
           source: { provider: 'test', model: 'test' },

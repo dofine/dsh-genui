@@ -29,7 +29,6 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-deque@0.1.2-rc.1'
   - '@deepseek-ai/dsh-file-reference@0.1.2-rc.1'
   - '@deepseek-ai/dsh-home-paths@0.1.2-rc.1'
-  - '@deepseek-ai/dsh-invariants@0.1.2-rc.1'
   - '@deepseek-ai/dsh-jobs@0.1.2-rc.1'
   - '@deepseek-ai/dsh-llm@0.1.2-rc.1'
   - '@deepseek-ai/dsh-native-command@0.1.2-rc.1'
