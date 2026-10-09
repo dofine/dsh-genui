@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { processGenuiSpec, repairGenuiSpec, validateGenuiSpec } from '../src/client/guard.ts'
+import { partialRepairGenuiSpec, processGenuiSpec, repairGenuiSpec, validateGenuiSpec } from '../src/client/guard.ts'
 import { COMPONENT_SCHEMAS } from '../src/client/genui-runtime/schema.ts'
 import { normalizeGenuiSpec } from '../src/client/genui-runtime/normalize.ts'
 import { diagnoseUnknownGenuiFields } from '../src/client/genui-runtime/diagnostics.ts'
@@ -63,6 +63,26 @@ describe('GenUI runtime schema normalization', () => {
     expect(result.repaired?.items[0]).toEqual({ type: 'steps', steps: [] })
   })
 
+  it('returns each nested record error once across validation and processing', () => {
+    const cases = [
+      { name: 'chart data', spec: { items: [{ type: 'chart', kind: 'line', data: [3, 4] }] }, paths: ['items[0].data[0]', 'items[0].data[1]'] },
+      { name: 'chart series data', spec: { items: [{ type: 'chart', kind: 'line', data: [{ label: 'a', value: 1 }], series: [{ label: 'S1', data: [3, 4] }] }] }, paths: ['items[0].series[0].data[0]', 'items[0].series[0].data[1]'] },
+      { name: 'tabs', spec: { items: [{ type: 'tabs', tabs: [3, 4] }] }, paths: ['items[0].tabs[0]', 'items[0].tabs[1]'] },
+      { name: 'accordion', spec: { items: [{ type: 'accordion', items: [3, 4] }] }, paths: ['items[0].items[0]', 'items[0].items[1]'] },
+      { name: 'two chart series with five points each', spec: { items: [{ type: 'chart', kind: 'line', data: [{ label: 'a', value: 1 }], series: [{ label: 'S1', data: [1, 2, 3, 4, 5] }, { label: 'S2', data: [1, 2, 3, 4, 5] }] }] }, paths: [
+        'items[0].series[0].data[0]', 'items[0].series[0].data[1]', 'items[0].series[0].data[2]', 'items[0].series[0].data[3]', 'items[0].series[0].data[4]',
+        'items[0].series[1].data[0]', 'items[0].series[1].data[1]', 'items[0].series[1].data[2]', 'items[0].series[1].data[3]', 'items[0].series[1].data[4]',
+      ] },
+    ]
+    for (const { name, spec, paths } of cases) {
+      const expected = paths.map(path => `${path} must be an object`)
+      for (const errors of [validateGenuiSpec(spec).errors, processGenuiSpec(spec).errors]) {
+        expect(errors, name).toEqual([...new Set(errors)])
+        expect(errors.filter(error => error.endsWith('must be an object')), name).toEqual(expected)
+      }
+    }
+  })
+
   it('validates enum domains from the runtime registry', () => {
     // 'purple' stays outside every tone vocabulary; 'warn'/'danger' on a
     // callout are now value-aliases (warn→warning, danger→error, issue #186),
@@ -99,6 +119,49 @@ describe('GenUI runtime schema normalization', () => {
       ['items[2].kind', 'kind', 'tone'],
       ['items[3].items', 'items', 'steps'],
     ])
+  })
+
+  it('normalizes aliases inside renderer-reachable table details before submission validation', () => {
+    const raw = { items: [
+      { type: 'table', columns: ['项目'], rows: [['A']], details: [[{ type: 'select', id: 'choice', items: ['A', 'B'] }]] },
+      { type: 'submit', label: '提交', action: 'send', groups: ['choice'] },
+    ] }
+    const normalized = normalizeGenuiSpec(raw)
+    expect(normalized.value).toEqual({ items: [
+      { type: 'table', columns: ['项目'], rows: [['A']], details: [[{ type: 'select', id: 'choice', options: ['A', 'B'] }]] },
+      { type: 'submit', label: '提交', action: 'send', groups: ['choice'] },
+    ] })
+    expect(normalized.warnings).toContainEqual(expect.objectContaining({ path: 'items[0].details[0][0].items', canonical: 'options' }))
+    const processed = processGenuiSpec(raw)
+    expect(processed.errors).toEqual([])
+    expect((processed.repaired?.items[0] as { details: unknown[][] }).details[0]).toEqual([{ type: 'select', id: 'choice', options: ['A', 'B'] }])
+  })
+
+  it('preserves detail alias normalization and row alignment after pruning a bad entry', () => {
+    const raw = { items: [
+      { type: 'table', columns: ['Item'], rows: [['A'], ['B']], details: [{ type: 'text', content: 'bad entry' }, [{ type: 'select', id: 'choice', items: ['A', 'B'] }]] },
+      { type: 'submit', label: 'Send', action: 'send', groups: ['choice'] },
+    ] }
+    const processed = processGenuiSpec(raw)
+    expect(processed.errors).toEqual(['items[0].details[0] must be an array or null'])
+    expect(processed.warnings).toContainEqual(expect.objectContaining({ path: 'items[0].details[1][0].items', canonical: 'options' }))
+    const candidate = partialRepairGenuiSpec(processed)
+    expect(candidate?.items).toEqual([
+      { type: 'table', columns: ['Item'], rows: [['A'], ['B']], details: [null, [{ type: 'select', id: 'choice', options: ['A', 'B'] }]] },
+      raw.items[1],
+    ])
+    expect(validateGenuiSpec(candidate).ok).toBe(true)
+  })
+
+  it('leaves group-header details outside normalization and diagnostics', () => {
+    const raw = { items: [{
+      type: 'table', columns: ['区域', '数值'], types: ['group', 'num'], rows: [['华东', ''], ['上海', '120']],
+      details: [[{ type: 'select', id: 'hidden', items: ['A', 'B'], lable: '隐藏' }], null],
+    }] }
+    const normalized = normalizeGenuiSpec(raw)
+    expect((normalized.value as typeof raw).items[0]!.details![0]![0]).toMatchObject({ items: ['A', 'B'], lable: '隐藏' })
+    expect(normalized.warnings.some(warning => warning.path === 'items[0].details[0][0].items')).toBe(false)
+    expect(diagnoseUnknownGenuiFields(normalized.value).some(warning => warning.path === 'items[0].details[0][0].lable')).toBe(false)
   })
 
   it('keeps canonical fields when an alias is also present', () => {
@@ -181,6 +244,17 @@ describe('GenUI runtime schema normalization', () => {
     expect(result.warnings.some(warning => warning.path === 'items[0].typo')).toBe(true)
     expect(result.warnings.some(warning => warning.path.includes('items[1]'))).toBe(false)
     expect(result.repaired?.items[1]).toEqual({ type: 'custom-widget', typo: true })
+  })
+
+  it('warns about unknown fields inside renderer-reachable table details', () => {
+    const warnings = diagnoseUnknownGenuiFields({ items: [
+      { type: 'table', columns: ['项目'], rows: [['A']], details: [[{ type: 'input', lable: '姓名' }]] },
+    ] })
+    expect(warnings).toContainEqual(expect.objectContaining({
+      kind: 'unknown-field',
+      path: 'items[0].details[0][0].lable',
+      type: 'input',
+    }))
   })
 
   it('diagnoses root and nested native record typos without inspecting custom payloads', () => {

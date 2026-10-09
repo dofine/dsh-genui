@@ -6,7 +6,7 @@ import { cleanup, fireEvent } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import type { Context } from '@deepseek-ai/cordis'
-import { installDomFenceRenderer, setDomRootFactory } from '../src/client/dom-fence.tsx'
+import { installDomFenceRenderer, setDomRootFactory, sourceLanguageOf } from '../src/client/dom-fence.tsx'
 import { inject } from '../src/client/index.tsx'
 import { clearSessionPanel, getPanelSpec } from '../src/client/panel-store.ts'
 
@@ -37,6 +37,16 @@ function makeModernCtx(sessionId: string): Context {
         }),
       },
     },
+  } as unknown as Context
+}
+
+function makeSourceCtx(sessionId: string, getChat: () => unknown, subscribe: (listener: () => void) => () => void): Context {
+  const base = makeModernCtx(sessionId) as unknown as Record<string, unknown>
+  return {
+    ...base,
+    get: (name: string) => name === 'uiConversation' ? {
+      binding: () => ({ target: () => ({ getSnapshot: getChat, subscribe }) }),
+    } : undefined,
   } as unknown as Context
 }
 
@@ -91,6 +101,7 @@ function assistantRow(anchorKey: string, streaming = false): HTMLElement {
   const row = document.createElement('div')
   row.setAttribute('data-chat-anchor-key', anchorKey)
   row.setAttribute('data-chat-flow-kind', 'assistant-step')
+  row.setAttribute('data-chat-node-key', anchorKey)
   if (streaming) row.setAttribute('data-streaming', '')
   return row
 }
@@ -117,7 +128,74 @@ afterEach(() => {
 })
 
 describe('installDomFenceRenderer', () => {
-  it.each(['Code', 'Code block', '代码块'])('renders canonical GenUI from a generic %s banner', async label => {
+  it('renders a Desktop tag-text fence and restores the original text on disposal', async () => {
+    const row = assistantRow('desktop-tag')
+    const prose = document.createElement('span')
+    prose.textContent = '回答正文'
+    const tag = document.createElement('span')
+    tag.className = '_plainRun_fbulu_6'
+    tag.textContent = `<dsh-ui>\r\n${VALID_SPEC}\r\n</dsh-ui>`
+    row.append(prose, tag)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('desktop-session'), () => {})
+    try {
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(tag.style.display).toBe('none')
+      expect(prose.textContent).toBe('回答正文')
+    } finally { dispose() }
+    expect(tag.style.display).toBe('')
+    expect(tag.textContent).toContain(VALID_SPEC)
+  })
+
+  it('updates a tag-text fence as its content changes', async () => {
+    const row = assistantRow('desktop-stream', true)
+    const tag = document.createElement('span')
+    tag.textContent = `<dsh-ui>\n${VALID_SPEC}\n</dsh-ui>`
+    row.appendChild(tag)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('desktop-stream-session'), () => {})
+    try {
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      tag.textContent = '<dsh-ui>\n{"title":"更新","items":[{"type":"text","content":"更新内容"}]}\n</dsh-ui>'
+      row.removeAttribute('data-streaming')
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('更新内容') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('renders tag text when the host omits the conversation row attributes', async () => {
+    const tag = document.createElement('span')
+    tag.textContent = `<dsh-ui>\n${VALID_SPEC}\n</dsh-ui>`
+    document.body.appendChild(tag)
+    const dispose = installDomFenceRenderer(makeModernCtx('desktop-no-row-session'), () => {})
+    try {
+      expect(await waitFor(() => document.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(tag.style.display).toBe('none')
+    } finally { dispose() }
+  })
+
+  it('leaves non-assistant and incomplete tag text visible', async () => {
+    const userRow = document.createElement('div')
+    userRow.setAttribute('data-chat-flow-kind', 'user')
+    const userTag = document.createElement('span')
+    userTag.textContent = `<dsh-ui>${VALID_SPEC}</dsh-ui>`
+    userRow.appendChild(userTag)
+    const assistant = assistantRow('desktop-incomplete')
+    const incomplete = document.createElement('span')
+    incomplete.textContent = `<dsh-ui>${VALID_SPEC}`
+    assistant.appendChild(incomplete)
+    document.body.append(userRow, assistant)
+    const dispose = installDomFenceRenderer(makeModernCtx('desktop-filter-session'), () => {})
+    try {
+      await tick()
+      expect(document.querySelector('.genui-dom-fence')).toBeNull()
+      expect(userTag.style.display).toBe('')
+      expect(incomplete.style.display).toBe('')
+    } finally { dispose() }
+  })
+
+  it.each(['Code', 'Code block', '代码块', 'Код', 'Código', 'Codice', 'Kode'])('renders canonical GenUI from a generic %s banner', async label => {
+    // 标签集合刻意跨语系：本地化通用标题是宿主呈现文案，不是语言（issue #258）——
+    // 旧白名单只列英/中，俄语等 locale 下同一份围栏永远停在代码块。
     const row = assistantRow('generic-valid')
     const block = genericCodeBlock(VALID_SPEC, label)
     row.appendChild(block)
@@ -126,6 +204,44 @@ describe('installDomFenceRenderer', () => {
     try {
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
       expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('takes over a generic banner whose body only needs tier-1 punctuation repairs', async () => {
+    // Real session (seq 40530): the model finally emitted the fence in the body,
+    // but one value carried unescaped half-width quotes. The host hides the
+    // `dsh-ui` language (unsupported by its highlighter) and the ChatSnapshot
+    // language source was unavailable for that row, so content recognition was
+    // the only path left — and it demanded a raw JSON.parse, so a perfectly
+    // renderable fence stayed a code block. Recognition now runs the same tier-1
+    // repair as the labelled path.
+    const repairable = '{"items":[{"type":"keyvalue","pairs":[{"key":"备注","value":"他说"可以"了 ✓"}]}]}'
+    expect(() => JSON.parse(repairable)).toThrow()
+    const row = assistantRow('generic-repairable')
+    const block = genericCodeBlock(repairable)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('可以') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('takes over a generic banner whose body is a spec followed by trailing junk', async () => {
+    // Real sample: the model leaked its tool-call template after the JSON and
+    // never closed the fence, so the host rendered everything as one code block.
+    // Content recognition must cut back to the balanced root instead of giving up.
+    const body = '{"items":[{"type":"table","columns":["观察项"],"rows":[["RL3b 转 pass"]]}]}'
+    const leaker = `${body}\n</x> parameter>\n</x> invoke>\n</x> calls>`
+    const row = assistantRow('generic-trailing-junk')
+    const block = genericCodeBlock(leaker)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('generic-session'), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('RL3b 转 pass') === true)).toBe(true)
     } finally { dispose() }
   })
 
@@ -163,6 +279,21 @@ describe('installDomFenceRenderer', () => {
     } finally { dispose() }
   })
 
+  it.each(['json', 'JSON', 'python'])('keeps a banner-labeled %s block even with the generic banner marker', async language => {
+    // 反转后的 domLanguageOf（#258）：banner 标注了已知真实语言 ⇒ 明确不是通用块，
+    // 即使宿主同时给了 data-code-block-banner 也不内容接管（大小写不敏感）。
+    const row = assistantRow(`banner-language-${language}`)
+    const block = genericCodeBlock(VALID_SPEC, language)
+    row.appendChild(block)
+    document.body.appendChild(row)
+    const dispose = installDomFenceRenderer(makeModernCtx('banner-language-session'), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
+    } finally { dispose() }
+  })
+
   it('keeps a generic CodeBlock outside assistant conversation rows', async () => {
     const block = genericCodeBlock(VALID_SPEC)
     document.body.appendChild(block)
@@ -184,6 +315,260 @@ describe('installDomFenceRenderer', () => {
     try {
       expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
       expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('restores dsh-ui from ChatSnapshot when DSH shows a generic Code banner', async () => {
+    const row = assistantRow('source-genui')
+    const block = genericCodeBlock(VALID_SPEC)
+    row.append(block)
+    document.body.append(row)
+    const chat = {
+      nodes: {
+        get: (key: string) => key === 'source-genui' ? {
+          kind: 'assistant-step',
+          data: { blocks: [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }] },
+        } : undefined,
+      },
+    }
+    const sourceCtx = makeSourceCtx('source-session', () => chat, () => () => {})
+    expect(sourceLanguageOf(sourceCtx, block)).toBe('dsh-ui')
+    const dispose = installDomFenceRenderer(sourceCtx, () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('parses each assistant Markdown source once after the opening language is stable', async () => {
+    const row = assistantRow('cached-source')
+    const block = genericCodeBlock(VALID_SPEC)
+    row.append(block)
+    document.body.append(row)
+    let sourceReads = 0
+    const data = Object.defineProperty({}, 'blocks', {
+      get: () => {
+        sourceReads += 1
+        return [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }]
+      },
+    })
+    const chat = { nodes: { get: () => ({ kind: 'assistant-step', data }) } }
+    const dispose = installDomFenceRenderer(makeSourceCtx('source-session', () => chat, () => () => {}), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      await tick(1100)
+      expect(sourceReads).toBe(1)
+    } finally { dispose() }
+  })
+
+  it('keeps rendering when the current session has no ChatSnapshot binding', async () => {
+    const row = assistantRow('inactive-source')
+    const block = genericCodeBlock(VALID_SPEC)
+    row.append(block)
+    document.body.append(row)
+    const ctx = {
+      ...makeModernCtx('inactive-session'),
+      get: (name: string) => name === 'uiConversation' ? {
+        binding: () => { throw new Error('session is inactive') },
+      } : undefined,
+    } as unknown as Context
+    const dispose = installDomFenceRenderer(ctx, () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('retries the ChatSnapshot subscription after an unavailable session binding recovers', async () => {
+    let available = false
+    let subscriptions = 0
+    const ctx = {
+      ...makeModernCtx('recovering-session'),
+      get: (name: string) => name === 'uiConversation' ? {
+        binding: () => {
+          if (!available) throw new Error('session is inactive')
+          return { target: () => ({
+            getSnapshot: () => undefined,
+            subscribe: () => {
+              subscriptions += 1
+              return () => {}
+            },
+          }) }
+        },
+      } : undefined,
+    } as unknown as Context
+    const dispose = installDomFenceRenderer(ctx, () => {})
+    try {
+      await tick(40)
+      expect(subscriptions).toBe(0)
+      available = true
+      expect(await waitFor(() => subscriptions === 1, 1500)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it.each([
+    ['json', '```json'],
+    ['foobar', '```foobar'],
+    ['no language', '```'],
+  ])('does not treat source %s as GenUI when the DOM is generic', async (_description, openingFence) => {
+    const row = assistantRow(`source-other-${_description}`)
+    const block = genericCodeBlock(VALID_SPEC)
+    row.append(block)
+    document.body.append(row)
+    const chat = {
+      nodes: {
+        get: () => ({
+          kind: 'assistant-step',
+          data: { blocks: [{ kind: 'text', text: `${openingFence}\n${VALID_SPEC}\n\`\`\`` }] },
+        }),
+      },
+    }
+    const dispose = installDomFenceRenderer(makeSourceCtx('source-session', () => chat, () => () => {}), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
+    } finally { dispose() }
+  })
+
+  it('uses the ChatSnapshot subscription when the DOM appears before source data', async () => {
+    const row = assistantRow('late-source', true)
+    const partial = '{"items":[{"type":"text","content":"hel'
+    const block = genericCodeBlock(partial)
+    row.append(block)
+    document.body.append(row)
+    let chat: unknown = { nodes: { get: () => undefined } }
+    let update: (() => void) | undefined
+    const dispose = installDomFenceRenderer(makeSourceCtx('source-session', () => chat, listener => {
+      update = listener
+      return () => { update = undefined }
+    }), () => {})
+    try {
+      await tick()
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      chat = {
+        nodes: {
+          get: () => ({ kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: `\`\`\`dsh-ui\n${partial}` }] } }),
+        },
+      }
+      update?.()
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')).not.toBeNull()
+      block.querySelector('code')!.textContent = VALID_SPEC
+      chat = {
+        nodes: {
+          get: () => ({ kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }] } }),
+        },
+      }
+      update?.()
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
+    } finally { dispose() }
+  })
+
+  it('resolves source data that arrives before its DOM CodeBlock', async () => {
+    const row = assistantRow('source-first')
+    const chat = {
+      nodes: {
+        get: () => ({ kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }] } }),
+      },
+    }
+    const dispose = installDomFenceRenderer(makeSourceCtx('source-session', () => chat, () => () => {}), () => {})
+    try {
+      const block = genericCodeBlock(VALID_SPEC)
+      row.append(block)
+      document.body.append(row)
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+    } finally { dispose() }
+  })
+
+  it('releases the old ChatSnapshot subscription when the viewed session changes', async () => {
+    let sessionId = 'session-a'
+    const subscriptions: string[] = []
+    const releases: string[] = []
+    let sessionUpdate: (() => void) | undefined
+    const ctx = {
+      sessions: {
+        list: {
+          getSnapshot: () => ({ ids: [sessionId], byId: { [sessionId]: { id: sessionId, retainedBy: { mainView: 1 } } } }),
+          subscribe: (listener: () => void) => {
+            sessionUpdate = listener
+            return () => { sessionUpdate = undefined }
+          },
+        },
+      },
+      get: (name: string) => name === 'uiConversation' ? {
+        binding: (id: string) => ({ target: () => ({
+          getSnapshot: () => undefined,
+          subscribe: () => {
+            subscriptions.push(id)
+            return () => { releases.push(id) }
+          },
+        }) }),
+      } : undefined,
+    } as unknown as Context
+    const dispose = installDomFenceRenderer(ctx, () => {})
+    try {
+      expect(await waitFor(() => subscriptions.includes('session-a'))).toBe(true)
+      sessionId = 'session-b'
+      sessionUpdate?.()
+      expect(await waitFor(() => subscriptions.includes('session-b'))).toBe(true)
+      expect(releases).toContain('session-a')
+    } finally { dispose() }
+    expect(releases).toContain('session-b')
+  })
+
+  it('uses the row fence ordinal and ignores plugin-owned code surfaces', async () => {
+    const row = assistantRow('source-ordinal')
+    const first = stockCodeBlock('first', 'ts')
+    const second = genericCodeBlock(VALID_SPEC)
+    const third = genericCodeBlock('third')
+    row.append(first, second, third)
+    document.body.append(row)
+    const chat = {
+      nodes: {
+        get: () => ({
+          kind: 'assistant-step',
+          data: { blocks: [{ kind: 'text', text: `\`\`\`ts\nfirst\n\`\`\`\n\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`\n\`\`\`json\nthird\n\`\`\`` }] },
+        }),
+      },
+    }
+    const sourceCtx = makeSourceCtx('source-session', () => chat, () => () => {})
+    expect(sourceLanguageOf(sourceCtx, second)).toBe('dsh-ui')
+    expect(sourceLanguageOf(sourceCtx, third)).toBe('json')
+    const dispose = installDomFenceRenderer(sourceCtx, () => {})
+    try {
+      expect(await waitFor(() => second.hasAttribute('data-genui-rendered'))).toBe(true)
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('你好，世界') === true)).toBe(true)
+      expect(first.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(third.hasAttribute('data-genui-rendered')).toBe(false)
+    } finally { dispose() }
+  })
+
+  it('keeps one streaming GenUI mount as source text grows and settles', async () => {
+    const row = assistantRow('stream-source', true)
+    const partial = '{"items":[{"type":"text","content":"hel'
+    const block = genericCodeBlock(partial)
+    row.append(block)
+    document.body.append(row)
+    let blocks = [{ kind: 'text', text: `\`\`\`dsh-ui\n${partial}` }]
+    let update: (() => void) | undefined
+    const chat = { nodes: { get: () => ({ kind: 'assistant-step', data: { blocks } }) } }
+    const dispose = installDomFenceRenderer(makeSourceCtx('source-session', () => chat, listener => {
+      update = listener
+      return () => { update = undefined }
+    }), () => {})
+    try {
+      expect(await waitFor(() => block.hasAttribute('data-genui-rendered'))).toBe(true)
+      const mount = row.querySelector('.genui-dom-fence')
+      expect(mount).not.toBeNull()
+      block.querySelector('code')!.textContent = VALID_SPEC
+      blocks = [{ kind: 'text', text: `\`\`\`dsh-ui\n${VALID_SPEC}\n\`\`\`` }]
+      update?.()
+      expect(await waitFor(() => mount?.textContent?.includes('你好，世界') === true)).toBe(true)
+      row.removeAttribute('data-streaming')
+      update?.()
+      expect(await waitFor(() => row.querySelector('.genui-dom-fence') === mount)).toBe(true)
     } finally { dispose() }
   })
 
@@ -299,10 +684,7 @@ describe('installDomFenceRenderer', () => {
 
   it('mounts while streaming once a component parses, and re-renders as the body grows', async () => {
     const row = assistantRow('s9', true)
-    // Real host behaviour: the language label is EMPTY while streaming
-    // (MarkdownText passes lang={streaming ? undefined : lang}) — the fence
-    // is identified by content, not by label.
-    const block = stockCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', '')
+    const block = stockCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', 'dsh-ui')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()
@@ -326,7 +708,6 @@ describe('installDomFenceRenderer', () => {
       expect(reveals[0]!.style.animation).toBe('none')
       expect(reveals[1]!.style.animation).not.toBe('none')
       // Settling adds durable identity; already visible content must not re-enter.
-      block.querySelector('div')!.firstElementChild!.textContent = 'dsh-ui'
       row.removeAttribute('data-streaming')
       expect(await waitFor(() => [...container!.querySelectorAll<HTMLElement>('[class*="reveal"]')]
         .every(element => element.style.animation === 'none'))).toBe(true)
@@ -363,7 +744,7 @@ describe('installDomFenceRenderer', () => {
 
   it('restores the raw code block when a skeleton body never parses at settle', async () => {
     const row = assistantRow('s9b2', true)
-    const block = stockCodeBlock('{"items":[{"type":"text","content":', '')
+    const block = stockCodeBlock('{"items":[{"type":"text","content":', 'dsh-ui')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()
@@ -401,7 +782,7 @@ describe('installDomFenceRenderer', () => {
 
   it('publishes a streaming panel:true fence only after the reply settles', async () => {
     const row = assistantRow('s9c', true)
-    const block = stockCodeBlock('{"panel":true,"title":"面板A","items":[{"type":"text","content":"A"}]', '')
+    const block = stockCodeBlock('{"panel":true,"title":"面板A","items":[{"type":"text","content":"A"}]', 'dsh-ui')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()
@@ -414,10 +795,7 @@ describe('installDomFenceRenderer', () => {
       expect(block.style.display).toBe('none')
       expect(row.querySelector('.genui-dom-fence')?.textContent).toBe('')
       expect(getPanelSpec('sess-1')).toBeNull()
-      // Settle: the label materialises (host behaviour) and the mount
-      // re-renders with the stable source → publish once.
-      const label = block.querySelector('div')
-      label!.textContent = 'dsh-ui'
+      // Settle: the mount gains stable source identity and publishes once.
       row.removeAttribute('data-streaming')
       await tick()
       expect(getPanelSpec('sess-1')?.title).toBe('面板A')
@@ -426,10 +804,8 @@ describe('installDomFenceRenderer', () => {
     }
   })
 
-  it('restores the stock block when a content-identified fence settles as another language', async () => {
+  it('does not infer a language from a streaming body when source data is unavailable', async () => {
     const row = assistantRow('s9e', true)
-    // A ```json fence whose streaming body happens to parse as a GenUI spec:
-    // taken over by content while streaming, reverted once the label arrives.
     const block = stockCodeBlock('{"items":[{"type":"text","content":"你好，世界"}]', '')
     row.appendChild(block)
     document.body.appendChild(row)
@@ -437,9 +813,8 @@ describe('installDomFenceRenderer', () => {
     const dispose = installDomFenceRenderer(makeCtx('sess-1', send), send)
     try {
       await tick()
-      expect(block.hasAttribute('data-genui-rendered')).toBe(true)
-      expect(row.querySelector('.genui-dom-fence')).not.toBeNull()
-      // Settle as ```json: the label says json → restore the stock block.
+      expect(block.hasAttribute('data-genui-rendered')).toBe(false)
+      expect(row.querySelector('.genui-dom-fence')).toBeNull()
       const label = block.querySelector('div')
       label!.textContent = 'json'
       row.removeAttribute('data-streaming')
@@ -1079,27 +1454,24 @@ describe('multi-surface discovery across host DOM shapes (issue #6)', () => {
     }
   })
 
-  it('streaming takeover works on a deepsuite surface (content-identified, label verified at settle)', async () => {
-    // 已知类名（.code-block）的异形表面与 .md-code-block 同权：流式期间按
-    // 内容接管（首个完成组件即渲染），落定后按标签复核——异形表面不丢
-    // 流式渲染能力。
+  it('streaming takeover works on a deepsuite surface with an explicit language', async () => {
+    // 两类宿主代码表面都按明确的 dsh-ui language 进入流式渲染。
     const row = assistantRow('s26', true)
-    const block = deepsuiteCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', '')
+    const block = deepsuiteCodeBlock('{"items":[{"type":"text","content":"你好，世界"},{"type":"te', 'dsh-ui')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()
     const dispose = installDomFenceRenderer(makeCtx('sess-6-7', send), send)
     try {
       await tick()
-      // 流式：内容已解析出完成组件 → 已接管并渲染。
+      // 流式：明确的 dsh-ui language 使围栏立即进入渲染流程。
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
       expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('你好，世界')
       // 正文继续增长 → 实时重渲染。
       block.querySelector('code')!.textContent = '{"items":[{"type":"text","content":"你好，世界"},{"type":"text","content":"第二块"}]}'
       await waitFor(() => row.querySelector('.genui-dom-fence')?.textContent?.includes('第二块') === true)
       expect(row.querySelector('.genui-dom-fence')?.textContent).toContain('第二块')
-      // 落定：标签出现且是 dsh-ui → 保持渲染（带稳定身份）。
-      block.querySelector('span')!.textContent = 'dsh-ui'
+      // settled 后保留稳定身份。
       row.removeAttribute('data-streaming')
       await tick()
       expect(block.hasAttribute('data-genui-rendered')).toBe(true)
@@ -1291,7 +1663,7 @@ describe('final-answer blank-out hardening (issue #19)', () => {
     const block = stockCodeBlock(JSON.stringify({ items: [
       { type: 'input', id: 'name', label: '姓名' },
       { type: 'button', label: '确认', action: 'confirm' },
-    ] }), '')
+    ] }), 'dsh-ui')
     row.appendChild(block)
     document.body.appendChild(row)
     const send = vi.fn()

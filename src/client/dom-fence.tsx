@@ -4,8 +4,9 @@
  * Stock DSH renders every fenced code block through the shared CodeBlock
  * surface (stable class `md-code-block`, language label rendered as the
  * banner's childless label div). This channel observes the conversation DOM,
- * finds blocks labelled `dsh-ui`, parses the raw fence body and mounts the
- * plugin's own React tree next to the (hidden) stock block:
+ * finds blocks labelled `dsh-ui` or complete `<dsh-ui>…</dsh-ui>` text spans,
+ * parses the raw fence body and mounts the plugin's own React tree next to
+ * the hidden host element:
  *
  * Fence discovery is **multi-surface** (issue #6): besides `md-code-block`,
  * the channel also matches the deepsuite-style surfaces some host builds
@@ -13,8 +14,9 @@
  * structural backstop — ANY element whose banner labels it `dsh-ui` and
  * which contains a `<pre>` body. The only invariants are the language label
  * (a leaf element with the exact text `dsh-ui`, outside the code body) and
- * the `<pre>`, so a host DOM drift degrades to a rendered fence, never a
- * silently skipped one:
+ * the `<pre>`. Desktop 0.11.0 instead emits a plain-text tag span for the
+ * same fence; the DOM channel recognizes that exact wrapper in assistant
+ * messages:
  *
  * - **Streaming takeover**: the channel takes over a dsh-ui block as soon as
  *   ONE finished component parses (the partial parser), and re-renders the
@@ -46,21 +48,25 @@
  *
  * Security posture matches the registry channel: only code shipped in this
  * plugin's browser bundle mounts React roots, the model can only author
- * fence text, and unrepairable bodies stay stock code blocks.
+ * fence text, and unrepairable bodies remain visible in their host form.
  */
 import { Fragment, isValidElement, type Key, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ChatNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { GenuiActionContext, type GenuiActionHandler } from './action-context.ts'
 import css from './GenuiBlock.module.css'
 import { renderSvgFence } from './svg-fence.tsx'
+import { repairFenceJson, trimToBalancedRoot } from '../shared/fence-repair.ts'
 import { describeFenceFailure, FenceDiagnostic, renderResolvedFenceNode, type GenuiFenceContext } from './fence-render.tsx'
 import { resolveViewedSessionId } from './session-resolver.ts'
 import { validateCanonicalGenuiSpec } from './guard.ts'
 import { diagnoseUnknownGenuiFields } from './genui-runtime/diagnostics.ts'
 import { normalizeGenuiSpec } from './genui-runtime/normalize.ts'
+import { sourceFencesOfAssistant, sourceLanguageAt } from './source-fence.ts'
 
 /** Fence surfaces the channel can take over, newest host first: the shared
  * CodeBlock surface every rc.6+ markdown fence renders through
@@ -158,6 +164,18 @@ function isTextNode(node: Node): node is Text {
   return node.nodeType === Node.TEXT_NODE
 }
 
+/** 读取 DSH Desktop 0.11.0 将 dsh-ui 围栏呈现为纯文本标签时的正文。 */
+function tagTextBodyOf(block: Element): string | null {
+  if (block.tagName !== 'SPAN' || block.childElementCount !== 0) return null
+  const flowKind = block.closest('[data-chat-flow-kind]')?.getAttribute('data-chat-flow-kind')
+  if (flowKind !== undefined && flowKind !== null && flowKind !== 'assistant-step') return null
+  const text = block.textContent?.trim() ?? ''
+  const opening = '<dsh-ui>'
+  const closing = '</dsh-ui>'
+  if (!text.startsWith(opening) || !text.endsWith(closing)) return null
+  return text.slice(opening.length, -closing.length).trim()
+}
+
 /** The banner's language label: a leaf element whose text is exactly the
  * lang. CodeBlock renders the label as a childless div; deepsuite-style
  * surfaces use a span; the ONLY structural invariants across hosts are "a
@@ -185,6 +203,41 @@ function infostringOf(block: Element): 'dsh-ui' | 'svg' | null {
   return null
 }
 
+/**
+ * 已知**真实语言标识符**的闭集：语言 id 有限、由本插件维护，白名单列它是对的。
+ * 反例——宿主各语言里通用代码块标题的叫法（`Code` / `代码块` / «Код» / Código /
+ * Codice / Kode …）——是**无界集合**，白名单永远列不全：旧实现 `GENERIC_CODE_LABELS`
+ * 只列了英/中两种，宿主 locale 为其它语言时本地化标题被当成真语言，围栏永远不被
+ * 接管（issue #258）。因此判定反转：标签命中本集合才视为「带语言」，其余（空标签、
+ * 本地化通用词）一律视为「无语言」，由 {@link isGenericGenuiFence} 的内容校验把关——
+ * 同一份正文的渲染结果不因宿主语言而不同。
+ */
+const KNOWN_LANGUAGE_LABELS = new Set([
+  // 插件自有语言
+  'dsh-ui', 'svg',
+  // 数据 / 标记 / 纯文本
+  'json', 'json5', 'yaml', 'yml', 'toml', 'ini', 'xml', 'html', 'css', 'scss', 'sass', 'less',
+  'markdown', 'md', 'text', 'txt', 'plain', 'plaintext', 'log', 'console', 'diff', 'patch',
+  // 助手回复里常见的编程语言
+  'js', 'jsx', 'javascript', 'ts', 'tsx', 'typescript', 'python', 'py', 'bash', 'sh', 'shell', 'zsh',
+  'sql', 'graphql', 'gql', 'rust', 'go', 'golang', 'java', 'kotlin', 'kt', 'swift', 'scala', 'dart',
+  'c', 'h', 'cpp', 'c++', 'cxx', 'cs', 'csharp', 'php', 'ruby', 'rb', 'perl', 'lua', 'r', 'matlab',
+  'haskell', 'hs', 'elixir', 'ex', 'erlang', 'clojure', 'clj', 'groovy', 'objc', 'objective-c',
+  'dockerfile', 'docker', 'makefile', 'make', 'cmake', 'protobuf', 'proto',
+])
+
+/**
+ * Read a language that the host still exposes in its CodeBlock banner.
+ *
+ * 只有标签命中 {@link KNOWN_LANGUAGE_LABELS} 才返回语言；空标签与本地化通用词
+ * （«Код» / Código / 代码块 …）是宿主的**呈现文案**、不是语义，一律返回 null——
+ * 此前它们会被当成真语言，连 ChatSnapshot 来源都被短路（issue #258）。
+ */
+function domLanguageOf(block: Element): string | null {
+  const label = labelTextOf(block)
+  return label !== '' && KNOWN_LANGUAGE_LABELS.has(label.toLowerCase()) ? label : null
+}
+
 /** The banner label's raw text (empty while streaming — the host renders the
  * language label only once the reply settles). Returns the first leaf
  * outside the code body (banners always lead with the language), so a
@@ -199,28 +252,53 @@ function labelTextOf(block: Element): string {
   return ''
 }
 
-/** 仅在通用 CodeBlock 的完整 JSON 通过现有 GenUI 规范时恢复丢失的围栏语言。
+/**
+ * 仅在通用 CodeBlock 的内容经过**与带标签路径相同的标点级修复**后仍是合规 GenUI
+ * 规范时，恢复丢失的围栏语言。
+ *
+ * 宿主会隐去它不认识的语言（高亮器不支持 `dsh-ui`），于是同一份围栏在 DOM 里表现为
+ * 一个通用标题的普通代码块（标题随宿主 locale 本地化：`Code` / `代码块` / «Код» …）；
+ * ChatSnapshot 的语言来源在部分行上不可用
+ * 时，内容识别是唯一出路。此前这里要求 `JSON.parse(raw)` 直接通过，导致**正文只差一个
+ * 未转义引号（tier-1 能修）的围栏永远不会被接管**——用户看到一个能渲染却始终是代码块的
+ * 围栏（真实会话 seq 40530：正文经 tier-1 修 14 处后可渲染，界面却停在代码块）。
+ * 结构级修复（tier-2）刻意不参与：内容识别是兜底，不该接管只是"长得像 JSON"的普通代码。
+
  *
  * @param block - 宿主提供的代码块元素。
  * @param raw - 未修改的围栏正文。
  * @returns 正文能按原有 GenUI 规范直接识别时返回 true。
  */
 function isGenericGenuiFence(block: Element, raw: string): boolean {
-  if (block.closest(ASSISTANT_FLOW_ROW) === null) return false
-  if (infostringOf(block) !== null || !block.querySelector('[data-code-block-banner]')) return false
-  if (!['Code', 'Code block', '代码块'].includes(labelTextOf(block))) return false
+  const row = block.closest<HTMLElement>(ASSISTANT_FLOW_ROW)
+  if (row === null || row.dataset.chatGroupPart === 'reasoning') return false
+  // domLanguageOf 已反转（#258）：banner 是已知真实语言 ⇒ 不是通用块；空标签或
+  // 本地化通用词 ⇒ null，进入内容校验。这里不再要求标题命中任何白名单。
+  if (domLanguageOf(block) !== null || !block.querySelector('[data-code-block-banner]')) return false
+  const repaired = repairFenceJson(raw)
+  const candidate = repaired === null ? raw : repaired.text
   let value: unknown
   try {
-    value = JSON.parse(raw)
+    value = JSON.parse(candidate)
   } catch {
-    return false
+    // 「合法 JSON + 尾部杂字符」（真实样本：模型把工具调用模板泄漏在 JSON 之后，
+    // 而且围栏没闭合）同样要能认出来：裁到平衡根值再试一次。只裁剪、不补全结构。
+    const trimmed = trimToBalancedRoot(candidate)
+    if (trimmed === null) return false
+    try {
+      value = JSON.parse(trimmed)
+    } catch {
+      return false
+    }
   }
   if (!validateCanonicalGenuiSpec(value).ok || diagnoseUnknownGenuiFields(value).length > 0) return false
   return JSON.stringify(normalizeGenuiSpec(value).value) === JSON.stringify(value)
 }
 
-/** Raw fence body from the stock block's code surface. */
+/** 读取宿主代码块或纯文本标签中的围栏正文。 */
 function rawOf(block: Element): string {
+  const tagTextBody = tagTextBodyOf(block)
+  if (tagTextBody !== null) return tagTextBody
   const pre = block.querySelector('pre')
   if (pre === null) return ''
   let text = ''
@@ -262,7 +340,7 @@ function implausibleLabeledAncestorOf(pre: HTMLElement, scope: ParentNode = docu
 }
 
 /**
- * Every dsh-ui fence surface under `scope`, outer-most first, deduped.
+ * Every dsh-ui fence surface or complete tag-text span under `scope`, in DOM order.
  * Known surface classes first (cheap, ordered), then a structural sweep —
  * every `<pre>` whose banner labels it `dsh-ui` — so a host with an
  * unlisted surface shape still renders. The label + `<pre>` gates make the
@@ -315,7 +393,12 @@ function findFenceCandidates(scope: ParentNode = document): HTMLElement[] {
     out.push(surface)
     seen.add(surface)
   }
-  return out
+  for (const span of scope.querySelectorAll<HTMLElement>('span')) {
+    if (span.closest(`.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, ${CODE_BLOCK_SELECTORS}, [data-chat-group-part="reasoning"], [data-tool], [data-sidebar-chat], [data-sidebar-right-session], [data-sidebar-right-panel], [data-panel-conversation], [data-plugin-panel]`) !== null) continue
+    if (tagTextBodyOf(span) === null) continue
+    out.push(span)
+  }
+  return out.sort((left, right) => left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
 }
 
 /** One-time-per-install drift diagnostic flag (reset per install, so tests
@@ -364,20 +447,164 @@ function rowOf(block: Element): Element {
   return block.closest('[data-chat-anchor-key]') ?? block.closest(FLOW_ROW) ?? block
 }
 
-/** 1-based ordinal of this block among settled dsh-ui blocks in its identity
- * scope. Streaming candidates are skipped, so the ordinal stays stable while
- * the block itself is still streaming. Anchor-less rows share the document
- * scope so fences from different messages cannot reuse `dom:unknown:N`. */
-function fenceIndexOf(row: Element, block: Element): number {
-  const scope = row.getAttribute('data-chat-anchor-key') === null ? document : row
+/** Return a stable one-based ordinal among settled GenUI fences in this row. */
+function fenceIndexOf(ctx: Context, row: Element, block: Element, sourceLanguage: (block: Element) => string | null | undefined = candidate => sourceLanguageOf(ctx, candidate)): number {
+  if (!row.matches(ASSISTANT_FLOW_ROW) || row.getAttribute('data-chat-anchor-key') === null) {
+    const scope = row.getAttribute('data-chat-anchor-key') === null ? document : row
+    let fallbackIndex = 0
+    for (const candidate of findFenceCandidates(scope)) {
+      if (candidate.closest(STREAMING) !== null) continue
+      const language = tagTextBodyOf(candidate) !== null ? 'dsh-ui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
+      if (language !== 'dsh-ui' && !(language === undefined && isGenericGenuiFence(candidate, rawOf(candidate)))) continue
+      fallbackIndex += 1
+      if (candidate === block) return fallbackIndex
+    }
+    return fallbackIndex + 1
+  }
   let index = 0
-  for (const candidate of findFenceCandidates(scope)) {
+  for (const candidate of findFenceCandidates(row)) {
     if (candidate.closest(STREAMING) !== null) continue
-    if (infostringOf(candidate) !== 'dsh-ui' && !isGenericGenuiFence(candidate, rawOf(candidate))) continue
+    if (candidate.closest(ASSISTANT_FLOW_ROW) !== row) continue
+    if (candidate.closest('[data-chat-group-part="reasoning"]') !== null) continue
+    const language = tagTextBodyOf(candidate) !== null ? 'dsh-ui' : domLanguageOf(candidate) ?? sourceLanguage(candidate)
+    if (language !== 'dsh-ui' && !(language === undefined && isGenericGenuiFence(candidate, rawOf(candidate)))) continue
     index += 1
     if (candidate === block) return index
   }
   return index + 1
+}
+
+/** Return outer host Markdown code surfaces in one assistant row's DOM order. */
+function hostFenceBlocksOf(row: Element): HTMLElement[] {
+  return [...row.querySelectorAll<HTMLElement>(CODE_BLOCK_SELECTORS)].filter(candidate => {
+    if (candidate.parentElement?.closest(CODE_BLOCK_SELECTORS) !== null) return false
+    if (candidate.closest(`.${CONTAINER_CLASS}, .${DIAGNOSTIC_CLASS}, [data-genui], [data-genui-svg-fence]`) !== null) return false
+    if (candidate.closest('[data-chat-group-part="reasoning"], [data-tool], [data-sidebar-chat], [data-sidebar-right-session], [data-sidebar-right-panel], [data-panel-conversation], [data-plugin-panel]') !== null) return false
+    if (candidate.closest(ASSISTANT_FLOW_ROW) !== row) return false
+    return isPlausibleFenceSurface(candidate) && candidate.querySelector('pre') !== null
+  })
+}
+
+/**
+ * Resolve source language for the host code surface at its assistant-row ordinal.
+ *
+ * @param ctx - active plugin context
+ * @param block - host Markdown CodeBlock element
+ * @returns source language, null for an unlabelled fence, or undefined when unavailable
+ */
+export function sourceLanguageOf(ctx: Context, block: Element): string | null | undefined {
+  const row = block.closest<HTMLElement>(`${ASSISTANT_FLOW_ROW}[data-chat-node-key]`)
+  if (row === null || row.dataset.chatGroupPart === 'reasoning') return undefined
+  const nodeKey = row.dataset.chatNodeKey
+  const index = hostFenceIndexOf(row, block)
+  const sessionId = sessionIdOfForSource(ctx)
+  if (!nodeKey || index < 0 || sessionId === undefined) return undefined
+  const chat = chatSourceOf(ctx, sessionId)?.getSnapshot()
+  return sourceLanguageAt(chat, nodeKey, index)
+}
+
+/** Cache each row's Markdown parse for one sweep and retain confirmed opening-line languages per host block. */
+function createSourceLanguageResolver(ctx: Context): { beginSweep: () => void; get: (block: Element) => string | null | undefined } {
+  const stableLanguages = new WeakMap<Element, { sessionId: SessionId; nodeKey: string; language: string | null }>()
+  let sweepLanguages = new Map<Element, string | null | undefined>()
+  let parsedNodes = new Map<string, ReturnType<typeof sourceFencesOfAssistant>>()
+  let sessionId: SessionId | undefined
+  let chat: ChatSnapshot | undefined
+  let chatRead = false
+
+  return {
+    beginSweep() {
+      sweepLanguages = new Map()
+      parsedNodes = new Map()
+      sessionId = undefined
+      chat = undefined
+      chatRead = false
+    },
+    get(block) {
+      if (sweepLanguages.has(block)) return sweepLanguages.get(block)
+      const row = block.closest<HTMLElement>(`${ASSISTANT_FLOW_ROW}[data-chat-node-key]`)
+      if (row === null || row.dataset.chatGroupPart === 'reasoning') return undefined
+      const nodeKey = row.dataset.chatNodeKey
+      const activeSessionId = sessionIdOfForSource(ctx)
+      if (!nodeKey || activeSessionId === undefined) return undefined
+
+      const stable = stableLanguages.get(block)
+      if (stable?.sessionId === activeSessionId && stable.nodeKey === nodeKey) {
+        sweepLanguages.set(block, stable.language)
+        return stable.language
+      }
+      if (!chatRead || sessionId !== activeSessionId) {
+        sessionId = activeSessionId
+        chat = chatSourceOf(ctx, activeSessionId)?.getSnapshot()
+        chatRead = true
+      }
+      const node = chat?.nodes.get(nodeKey)
+      if (node?.kind !== 'assistant-step') return undefined
+      const assistantNode = node as ChatNode<'assistant-step'>
+      let fences = parsedNodes.get(nodeKey)
+      if (fences === undefined) {
+        fences = sourceFencesOfAssistant(assistantNode.data.blocks)
+        parsedNodes.set(nodeKey, fences)
+      }
+      const index = hostFenceIndexOf(row, block)
+      if (index < 0) return undefined
+      const fence = fences[index]
+      const language = fence?.lang
+      if (fence !== undefined && fence.openingLineComplete) {
+        stableLanguages.set(block, { sessionId: activeSessionId, nodeKey, language: fence.lang })
+      }
+      sweepLanguages.set(block, language)
+      return language
+    },
+  }
+}
+
+/**
+ * Resolve a host CodeBlock's zero-based ordinal among assistant Markdown surfaces.
+ *
+ * @param row - owning assistant row
+ * @param block - host Markdown CodeBlock element
+ * @returns source-order ordinal or -1 when the element is not a host code surface
+ */
+export function hostFenceIndexOf(row: Element, block: Element): number {
+  return hostFenceBlocksOf(row).indexOf(block as HTMLElement)
+}
+
+/** Read the currently viewed session for source Markdown lookup. */
+function sessionIdOfForSource(ctx: Context): SessionId | undefined {
+  return resolveViewedSessionId(ctx.sessions.list.getSnapshot())
+}
+
+/** Read uiConversation as an optional service so Cordis does not require a hard inject. */
+function uiConversationOf(ctx: Context): Context['uiConversation'] | undefined {
+  if (typeof ctx.get !== 'function') return undefined
+  return ctx.get('uiConversation', false) as Context['uiConversation'] | undefined
+}
+
+/** Read the current ChatSnapshot source without interrupting sweeps during session transitions. */
+function chatSourceOf(ctx: Context, sessionId: SessionId): { getSnapshot: () => ChatSnapshot | undefined; subscribe: (listener: () => void) => (() => void) | undefined } | undefined {
+  try {
+    const source = uiConversationOf(ctx)?.binding(sessionId).target('chat')
+    if (source === undefined) return undefined
+    return {
+      getSnapshot: () => {
+        try {
+          return source.getSnapshot()
+        } catch {
+          return undefined
+        }
+      },
+      subscribe: listener => {
+        try {
+          return source.subscribe(listener)
+        } catch {
+          return undefined
+        }
+      },
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -434,12 +661,27 @@ export function installDomFenceRenderer(
   const diagnostics = new Map<HTMLElement, { container: HTMLElement; root: Root; raw: string }>()
   let disposed = false
   let rafId: number | null = null
+  let activeChatSession: SessionId | undefined
+  let unsubscribeChat: (() => void) | undefined
+  const sourceLanguages = createSourceLanguageResolver(ctx)
 
   const sessionIdOf = (): SessionId | undefined => {
     try {
       return resolveViewedSessionId(ctx.sessions.list.getSnapshot())
     } catch {
       return undefined
+    }
+  }
+
+  /** Retry ChatSnapshot subscription while the active session binding is unavailable. */
+  function syncChatSubscription(sessionId: SessionId | undefined): void {
+    if (sessionId !== activeChatSession) {
+      unsubscribeChat?.()
+      unsubscribeChat = undefined
+      activeChatSession = sessionId
+    }
+    if (sessionId !== undefined && unsubscribeChat === undefined) {
+      unsubscribeChat = chatSourceOf(ctx, sessionId)?.subscribe(schedule)
     }
   }
 
@@ -454,7 +696,7 @@ export function installDomFenceRenderer(
       // per block so the degraded path is visible in the console.
       warnOnce(block, 'no [data-chat-anchor-key] ancestor for a dsh-ui fence (host render path without row anchor — e.g. Safari); using fallback identity dom:unknown:N')
     }
-    const fenceIndex = fenceIndexOf(row, block)
+    const fenceIndex = fenceIndexOf(ctx, row, block, sourceLanguages.get)
     const anchorKey = row.getAttribute('data-chat-anchor-key') ?? 'unknown'
     const key = `dom:${anchorKey}:${fenceIndex}` as Key
     const sessionId = sessionIdOf()
@@ -575,26 +817,22 @@ export function installDomFenceRenderer(
     if (block.hasAttribute(PROCESSED)) return
     const row = rowOf(block)
     const settled = isSettled(block)
-    // 已完成的代码块通常带有 dsh-ui 标签；流式代码块可能没有标签：
-    // the host renders the language label only once the reply settles
-    // (MarkdownText passes `lang={streaming ? undefined : lang}`), so during
-    // streaming the fence is identified by CONTENT — a partial parse that
-    // yields a GenUI node. A misidentified fence (e.g. a ```json block that
-    // happens to parse) is reverted at the settle transition below.
-    const language = infostringOf(block)
+    const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+    const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
+    const language = domLanguage ?? sourceLanguage
     const raw = rawOf(block)
-    // DSH 0.1.7 可能丢失围栏 language metadata，最终显示通用 Code。
-    // DOM 可识别的显式 language 始终优先；不可识别的语言无法从最终 DOM 恢复。
-    const genericGenui = settled && language === null && isGenericGenuiFence(block, raw)
-    if (settled && language === null && !genericGenui) return
-    if (!settled && language === null && labelTextOf(block) !== '') return
-    if (!settled && language === 'svg') return
+    // DSH 0.1.7-alpha.2 会在最终 DOM 隐去不支持高亮的语言；公开 ChatSnapshot 的原始 Markdown 是 language 来源。
+    // 内容识别只在 source 暂不可用且 assistant 已结束时兜底，不覆盖已确认的 language 或无 language fence。
+    const genericGenui = language === undefined && settled && isGenericGenuiFence(block, raw)
+    if (language !== 'dsh-ui' && language !== 'svg' && !genericGenui) return
+    if (!settled && language !== 'dsh-ui') return
     if (raw.trim() === '') {
       if (settled) warnOnce(block, `settled ${language ?? 'dsh-ui'} fence has an empty body; keeping the code block`)
       return
     }
     const { key, context } = contextOf(row, block, settled)
-    const node: ReactNode | null = language === 'svg' ? renderSvgFence(raw, key) : renderResolvedFenceNode(raw, key, context)
+    const acceptedLanguage = language === 'svg' ? 'svg' : 'dsh-ui'
+    const node: ReactNode | null = acceptedLanguage === 'svg' ? renderSvgFence(raw, key) : renderResolvedFenceNode(raw, key, context)
     // Null = no finished component yet (streaming half) or unrepairable: the
     // stock code block stays visible. A settled unrepairable body also gets a
     // VISIBLE diagnostic — console-only reporting left the defect invisible
@@ -643,7 +881,7 @@ export function installDomFenceRenderer(
     }
     block.style.display = 'none'
     block.setAttribute(PROCESSED, '')
-    mounts.set(block, { root, container, block, lastRaw: raw, lastSettled: settled, language: language ?? 'dsh-ui', lastNode: payload, skeleton: node === null })
+    mounts.set(block, { root, container, block, lastRaw: raw, lastSettled: settled, language: acceptedLanguage, lastNode: payload, skeleton: node === null })
   }
 
   /** Pre-paint repair: the host's React re-renders during streaming can wipe
@@ -702,6 +940,9 @@ export function installDomFenceRenderer(
    * new dsh-ui block — settled or still streaming. */
   function sweep(): void {
     if (disposed) return
+    sourceLanguages.beginSweep()
+    const sessionId = sessionIdOf()
+    syncChatSubscription(sessionId)
     for (const [block, mount] of mounts) {
       if (!block.isConnected) {
         unmountBlock(block)
@@ -709,19 +950,18 @@ export function installDomFenceRenderer(
       }
       const raw = rawOf(block)
       const settled = isSettled(block)
-      if (mount.language === 'svg' && (!settled || infostringOf(block) !== 'svg')) {
+      const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+      const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
+      const language = domLanguage ?? sourceLanguage
+      const validGenui = language === 'dsh-ui'
+        || (language === undefined && settled && isGenericGenuiFence(block, raw))
+      if (mount.language === 'svg' && language !== 'svg') {
         unmountBlock(block)
         continue
       }
-      // 流式结束后仍以 DOM 可识别的 language 为准；通用 Code 每次正文变化均需完整校验。
-      if (settled && mount.language !== 'svg') {
-        const labelText = labelTextOf(block)
-        if (labelText !== '' && labelText !== 'dsh-ui' && !isGenericGenuiFence(block, raw)) {
-          // A content-identified fence settled as another language (e.g. a
-          // ```json block that happened to parse): restore the stock block.
-          unmountBlock(block)
-          continue
-        }
+      if (mount.language === 'dsh-ui' && !validGenui) {
+        unmountBlock(block)
+        continue
       }
       // A host re-render can also wipe the CONTENT of our container while
       // leaving the node in place. An inline mount whose container came back
@@ -805,8 +1045,9 @@ export function installDomFenceRenderer(
       // label is no longer dsh-ui is somebody else's fence, so our explanation
       // would be about the wrong block.
       if (isSettled(block)) {
-        const labelText = labelTextOf(block)
-        if (labelText !== '' && labelText !== 'dsh-ui') {
+        const domLanguage = tagTextBodyOf(block) !== null ? 'dsh-ui' : domLanguageOf(block)
+        const sourceLanguage = domLanguage === null ? sourceLanguages.get(block) : undefined
+        if ((domLanguage ?? sourceLanguage) !== 'dsh-ui') {
           clearDiagnostic(block)
           continue
         }
@@ -826,6 +1067,10 @@ export function installDomFenceRenderer(
       sweep()
     })
   }
+
+  const unsubscribeSessions = typeof ctx.sessions.list.subscribe === 'function'
+    ? ctx.sessions.list.subscribe(schedule)
+    : undefined
 
   const observer = new MutationObserver(records => {
     // Restore detached roots before paint, retaining input and pending actions.
@@ -864,6 +1109,9 @@ export function installDomFenceRenderer(
   return () => {
     disposed = true
     observer.disconnect()
+    unsubscribeSessions?.()
+    unsubscribeChat?.()
+    unsubscribeChat = undefined
     window.clearInterval(interval)
     if (rafId !== null) {
       cancelAnimationFrame(rafId)

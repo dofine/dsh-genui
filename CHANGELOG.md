@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0-charts.1] — fork 同步上游 0.11.4+ 基线，支持 DSH 0.2.x
+
+### 变更
+- **基线换成上游 `omdsh-dev/dsh-genui` 0.11.4 之后的 main**（含其 Unreleased：宿主目标更新为 `0.2.0-rc.2` 与 `0.2.1-alpha.1`）：peerDependencies 全系扩展 `>=0.2.0-rc.1 <0.3.0-0`，CI 矩阵改为 minimum（`dsh-v0.1.2-rc.1`）/ current（`dsh-v0.2.0-rc.2`）/ next（`dsh-v0.2.1-alpha.1`）。
+- **采纳上游对 `./invariant` 的移除**：删除 `src/plugin/invariant.ts`、`./invariant` 导出与 `@deepseek-ai/dsh-invariants` 依赖（DSH 已废弃该运行时诊断入口）。
+- **上游 0.11.2–0.11.4 的全部修复随合并并入**：Desktop 标签文本围栏（#268）、locale 无关的通用代码块识别（#258）、tier-1/tier-2 修复链强化（#239、#254）、多行文本与表格单元格的复制保真（#233）、fence-feedback 交付判定与重载恢复（#263、#267）、reasoning-only 回合重试（#259）、list 项字段（#265）、submit / table 详情校验（#228 系）、artifact 导出与 standalone 运行时。
+- 本 fork 上一轮未发布的 0.1.7 兼容工作（通用 CodeBlock 回退、`DiffBlockLabels`、`CommandClaim.name` 适配）已被上游 0.11.3–0.11.4 的对应实现取代，随合并一并移除。
+
+### 保留
+- flint 图表节点与本 fork 的图表分工（flint 默认 / echart 逃生舱 / chart / plot）不变；`lib/assets/flint.js` 纳入 pack 必需清单。
+- git 源码安装与 `lib/` 入库策略不变；CI 的 lib / src 漂移校验保留（随上游矩阵改挂在 current 角色）。
+
 ## [0.12.0-charts.1] — fork 迁移到上游新基线
 
 ### 变更
@@ -16,12 +28,89 @@
 
 ### 兼容性
 
+- 将 DSH 当前宿主与下一测试版的接口、打包安装和发布验证目标更新为 `0.2.0-rc.2` 与 `0.2.1-alpha.1`。
+- 移除 DSH 已废弃的运行时诊断配套入口 `./invariant`、对应构建产物与 `@deepseek-ai/dsh-invariants` 直接依赖。
+- 对应宿主版本的公开依赖检查加入技能注册、插件重载和持久化纠错恢复测试；会话样本补齐新版要求的消息记录字段。
+
+## [0.11.4] - 2026-10-08
+
+### 修复
+
+- DSH Desktop 0.11.0 将 `dsh-ui` 围栏呈现为 `<dsh-ui>…</dsh-ui>` 纯文本标签时，DOM 通道现可识别助手消息中的完整标签文本，渲染卡片并在卸载时恢复原文（#268）。
+- `list` 项支持 `label`/`name` 标题字段与 `description`/`content`/`text`/`body`/`detail` 正文字段；只有正文的记录也能显示，无法渲染的记录字段会给出位置明确的警告（#265）。
+- **GenUI reasoning-only 回合进入宿主重试**：当前回合调用 `validate_dsh_ui` 后，普通顶层会话若以 `stop` 结束且完整内容块只有 reasoning，插件会将终止结果改写为 `EMPTY_RESPONSE`，交由宿主现有重试策略处理；普通会话、子代理、辅助请求及含正文或工具调用的结果保持原行为。`fenceFeedback: false` 仍只关闭同回合围栏修正（#259）。
+- **完善 GenUI 交付判定与 fence-feedback 重载恢复**：`render_ui` 只有明确返回 `status=rendered` 才计为正式交付，正常返回的 `status=invalid` 会继续进入零交付修正；plugin reload 时主动读取历史会话，恢复当前 turn 的 render fingerprint、delivery turn 和已消费的 correction budget，避免重复发送 delivery reminder 或重新获得修正次数；render fingerprint 去重仅限当前 turn，新 turn 可重新修正相同错误。每 turn 最多两条 correction 的上限由 render failure 与 nothing-delivered reminder 共同使用（#263、#267）。
+- **非英文宿主 locale 下围栏永远不渲染**：通用代码块的判定依赖硬编码标题白名单（`Code` / `Code block` / `代码块`），宿主 locale 为其它语言时（如俄语包的 «Код»），本地化标题被当成真实语言，同一份 `dsh-ui` 围栏既不走带标签路径也不进内容识别——界面永远停在代码块。现在判定反转：banner 标签命中**已知真实语言闭集**（语言 id 有限、由插件维护）才视为带语言，空标签与任何本地化通用词一律视为无语言、交给内容校验把关——同一份正文的渲染结果不再因宿主语言而不同（#258）。
+- **多行文本/代码的复制不再丢换行**：行内渲染曾把每个 `\n` 变成 `<br>`，而 `<br>` 对 `textContent` 与 `Selection.toString()` **零贡献**——用户选中表格单元格复制出来的是一整行，`python - <<'PY' … PY` 这类 heredoc 结构被毁、必须手工拼回。现在换行在 DOM 里保持为**真实换行符**（选中/复制原样），由容器的 `white-space` 负责呈现：代码形单元格 `.tdCode` 用 `pre-wrap`（换行 + 行首缩进都保留），散文单元格 `.tdMultiline` 用 `pre-line`（换行呈现、空格照常折叠），单行单元格仍是 `nowrap`；`calloutBody`/`liTitle`/`liDesc`/`kvValue`/`tlDesc`/`detailBody`/`accBody` 同步声明 `pre-line`，因为它们此前正是靠 `<br>` 硬断行（#233）。
+- **多行表格单元格的缩进**：`.table td` 的 `nowrap`（表格的数据语气）会折叠单元格里的空白，模型写进单元格的代码缩进会消失；行内 `` `code` `` 同步改为 `pre-wrap`，不再吞掉自身空格（#233）。
+- **「未转义引号 + 尾部杂字符」叠在一起时围栏不再整条失守**：模型常在 JSON 根值之后追加 `</p>` 或一句解释（真实会话 539 条围栏里 240 条有尾随 `</p>`），这类正文本来靠 `parsePartialGenuiSpec` 的平衡前缀就能渲染；但一旦**同时**还有字符串内未转义的半角引号，tier-1 因为「必须整体 parse 通过」而放弃、tier-2 同样放弃——两个缺陷叠加就把整条围栏变成代码块 + 红横幅。现在 tier-2 在整体 parse 失败时回退到**平衡前缀**（根值结束处）并采用它；tier-1 保持严格（它也在流式期运行，采用前缀可能发布半截正文）。真实语料 37 条不可渲染 → 22 条（救回 15 条，占失败数 40%）。
+- SKILL.md 使用规则第 3 条补充：`}` 之后不要再写任何字符（常见错误是追加 `</p>` 或解释）。
+- **通用代码块的内容识别接受标点级修复**：宿主会隐去它不认识的语言（高亮器不支持 `dsh-ui`），此时同一份围栏在 DOM 里是一个「代码块 / Code block / Code」标签的普通代码块；当 ChatSnapshot 的语言来源在那一行上不可用时，内容识别是唯一出路。此前它要求 `JSON.parse(raw)` **直接**通过，于是「只差一个未转义引号（tier-1 可修）」的围栏永远不会被接管——真实会话（seq 40530）里模型终于把围栏写进正文、正文经 tier-1 修 14 处后可正常渲染，界面却始终停在代码块。现在内容识别跑与带标签路径**相同的 tier-1 修复**，并且在整体 parse 失败时**裁到第一个平衡根值**（`trimToBalancedRoot`，只裁剪、不补全结构）——真实样本里模型把工具调用模板泄漏在 JSON 之后且围栏没闭合，正是这一种；结构级 tier-2 刻意不参与（兜底不该接管只是"长得像 JSON"的普通代码），canonical 规范 / 未知字段 / 归一化等价的检查保持不变。
+- **回合状态的两处漏补救**：① `render_ui` 是否交付由 `tool/result` 决定，只有无内部错误、结果块非 `isError` 且协议明确返回 `status=rendered` 才算成功；结果未到达时回合边界保持静默，不与晚到结果赛跑。② 同回合的合成上下文消息（`agent.inject()` 通知、成员消息等）不会清掉本回合的验证/交付状态；重置只发生在正式的 `turn/start` 边界与直接用户提示（`source.kind === 'user'`）上（#236、#263 review）。
+
+## [0.11.3] - 2026-09-29
+
+### 兼容性
+
+- 支持 DSH `0.2.0-rc.1` / `0.2.x` 宿主（#227）。
+- 扩展 `@deepseek-ai/dsh-*` peerDependencies 至 `0.2.x`（#227）。
+- 将 CI 宿主兼容目标整理为 minimum / current / next（#227）。
+- 将 `dsh-v0.2.0-rc.1` 纳入 host API 与 packed host smoke 验证（#227）。
+
+## [0.11.2] - 2026-09-28
+
+### 新增
+
+- 完成态 GenUI 支持导出 standalone HTML 与 `.genui.json`（#205、PR #212）。
+- standalone 页面内嵌运行时、样式、主题、KaTeX 字体及按需选择的图形引擎，可独立打开；成果物保存安全的交互状态、语言和主题。
+
+### 兼容性
+
+- `preview-latest` 与 Release API、packed smoke 宿主检查统一更新为 DSH `0.1.7-rc.2`，并保留 `0.1.7-rc.1` API 标签检查能力。
+- Session format v4 的 fence repair feedback 使用 producer-owned source kind `plugin:@changfenhuang/dsh-genui`，修复反馈消息因旧 source kind 被新版 DSH 拒绝、导致会话持久化失败的问题；旧 Session format 继续使用 legacy source，并同时识别两种插件来源（#218、PR #220）。
+
+### 修复
+
+- 去除 `validateGenuiSpec` 与 `processGenuiSpec` 中完全相同的重复校验错误，覆盖 chart、tabs 和 accordion 的嵌套数据（#222、PR #223）。
+- `TextareaNode` 恢复时优先使用已持久化的用户值，避免重新挂载后被 spec 默认值覆盖（PR #213）。
+- `QuizNode` 的 `id` 改变时重置已作答状态，避免原位换题后保留旧题状态（PR #214）。
+- 允许 tab 缺少 `items` 及空 tab，修复相关校验失败（PR #216）。
+- 改进行内 Markdown 内容校验与反引号解析，减少误报并保留代码围栏原文（PR #217）。
+
+## [0.11.1] - 2026-09-24
+
+### 兼容性
+
+- 支持 DSH `^0.1.7-alpha.1`，并将 `dsh-v0.1.7-rc.1` 纳入宿主兼容验证；保留 `dsh-v0.1.2-rc.1` 最低版本验证。
+- 新版 DSH 隐去 `dsh-ui` fence language 后，从公开 `ChatSnapshot` 原始 Markdown 恢复 source language；streaming 阶段正常识别，settled 后保持 GenUI，不再恢复为 JSON CodeBlock（#203、#204）。
+- 适配新版 `CommandClaim.name`、ui-primitives 箭头图标导出和 `DiffBlockLabels` 工具栏文案。
+
+### 新增
+
+- ECharts 增加 `wordCloud` 预设及 `echarts-wordcloud` 扩展支持；新增隔离图片模式 SVG 组件与裸 `svg` fence 预览（#183）。
+- 文字字段支持真实换行；浏览器界面文案支持中英文切换，并可跟随 DSH 语言设置。
+- 离散控件操作逐次回传，slider 拖动继续合并同一控件的连续变化（#178）。
+- 围栏支持逐节点保留有效组件；回合结束时校验最终 `dsh-ui` 围栏正文，为被拒绝的围栏显示诊断，并默认开启同回合修正反馈（#160、#186、#200）。
+
+### 修复
+
+- 修复新版 DSH 移除 `sessions.list.current` 后的会话解析，恢复 action 回传、状态保存和 `panel: true` 发布（#196）。
+- 修复堆叠柱状图按分类合计值计算尺度的问题（#206）。
+- 修复柱状图合计的浮点显示误差，按分类输入精度显示结果（#209、#210）。
+- 修复模型反馈引起的回复语言漂移（#165），以及 Tetris 表格 `columns` 与 `rows` 错位时的围栏解析（#192、#193）。
+- 扩展字段别名、根形状识别、表格表头推导和节点校验诊断，减少可恢复输入造成的组件丢失（#163、#172、#175）。
+- 修复 Math 行内标记中的转义字符处理，并更新字段规范化规则（#177）。
+
+## [0.11.1-preview.3] - 2026-09-23
+
+### 兼容性
+
 - 增加 DSH `^0.1.7-alpha.1` 支持；真实宿主验收覆盖 `dsh-v0.1.7-alpha.1` 与 `dsh-v0.1.7-alpha.2`。
 - 保留 DSH `0.1.2-rc.1` 最低兼容基线检查。
 - 增加新版 DSH API 编译检查，确保宿主公开类型变化能够在发布前被发现。
+- DSH `0.1.7-alpha.2` 最终 DOM 不再暴露 `dsh-ui` fence language；改从公开 ChatSnapshot 原始 Markdown 恢复 source language，流式阶段即可识别，settle 后保持 GenUI，不回退为原始 JSON（#204）。
 - 适配新版 `CommandClaim.name` 与 ui-primitives 箭头图标导出变化。
 - 适配 `0.1.7-alpha.2` 的 `DiffBlockLabels` 工具栏文案。
-- 适配 `0.1.7-alpha.2` 代码块丢失 `dsh-ui` language metadata 的情况：仅在 assistant 消息行内对通用 CodeBlock 的完整 JSON 执行原有 GenUI 规范校验；仍可从 DOM 读取的 language 标签优先。不支持语法高亮的 language 会与通用标签合并，DOM 无法还原其原始值。
 
 ### 新增
 - **ECharts 词云**：`echart` 节点新增 `preset: "wordCloud"`，`data:[{label,value}]` 的 value 即权重，颜色按序循环 `palette`（缺省跟随主题调色板）；`option` 模式同步注册 `echarts-wordcloud` 扩展，`series[].type: "wordCloud"` 直接可用。完整版引擎新增约 30 KB（#183）。
@@ -29,6 +118,7 @@
 - **裸 `svg` 围栏自动预览**：模型直接输出 ` ```svg ` 代码围栏（不带 `dsh-ui` 包装）时，落定后自动显示为图形预览，带「预览/源码」切换，源码可复制；流式生成中保持原样，不闪错误；仅接管语言标签明确为 `svg` 的围栏，其他语言代码块不受影响。registry 与 DOM 两条渲染通道均已接入（#183）。
 
 ### 修复
+- **堆叠柱状图使用分类总值计算尺度**：纵向堆叠柱的 Y 轴与横向堆叠柱的宽度统一按照最大分类合计值缩放，避免柱体越出绘图区并恢复分类间正确的总长度比例（#206）。
 - **dsh-ui 最终围栏反馈默认开启**：回合结束时直接检查 assistant message 的最终围栏正文，并与浏览器 renderer 共用 JSON 修复、组件归一化和坏节点清理流程；无法渲染时在同一回合请求模型修正，`fenceFeedback: false` 可关闭（#200）。
 - **Tetris 形 table columns 不再让围栏退化成代码块**：模型把表头数组提前闭合、又把行矩阵写成 `columns` 的**兄弟数组元素**（`"columns":["a","b"],["rows":[[…]]]` 或 `"columns":["a","b"],[["1","2"]]`）。这类正文两侧括号是**配平**的，所以 tier-2 的补括号扫描救不回来；现在 tier-2 先做一次形状重写（把该兄弟数组收编为 `"rows":[…]`、并丢弃错位留下的多余闭合符），整串 parse 通过才采纳。四个真实会话 130 条围栏的未渲染数从 1 归零（#192）。
 - **兼容新版 DSH 会话快照**：DOM 通道在宿主移除 `sessions.list.current` 后，改用 `byId[*].retainedBy.mainView` 解析当前会话，恢复 action 回传、状态持久化和 `panel:true` 发布，并在无法解析会话时输出一次诊断（#196）。

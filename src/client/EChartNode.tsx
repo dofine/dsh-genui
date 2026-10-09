@@ -14,16 +14,11 @@
 import { renderInline } from './inline.ts'
 import { useEffect, useRef, useState } from 'react'
 import css from './GenuiBlock.module.css'
-import { CORE_PRESETS, createChart as lazyCreateChart, type EChartsInstance } from './echarts-lazy.ts'
+import { createChart as lazyCreateChart, type EChartsInstance } from './echarts-lazy.ts'
+import { echartEngineFor } from './echarts-engine.ts'
 import { CHART_COLORS } from './blocks/charts.tsx'
 import { obj } from './genui-runtime/value-utils.ts'
 import type { GenuiEChart } from './spec.ts'
-
-/** Which engine bundle this node needs (progressive disclosure). */
-function neededEngine(node: GenuiEChart): 'core' | 'full' {
-  if (node.option !== undefined) return 'full'
-  return CORE_PRESETS.has(node.preset ?? 'bar') ? 'core' : 'full'
-}
 
 /**
  * Categorical fallback palette. The host defines its `--dsw-static-*` tokens on
@@ -455,7 +450,8 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
     // theme of its own, so its missing defaults are filled here.
     const option = node.option === undefined ? presetOption(node, el) : withHostTheme(node.option, el)
 
-    void lazyCreateChart(el, option, { height: node.height ?? 300 }, neededEngine(node)).then((inst) => {
+    const engine = echartEngineFor(node) === 'echarts-full' ? 'full' : 'core'
+    void lazyCreateChart(el, option, { height: node.height ?? 300 }, engine).then((inst) => {
       if (!alive) {
         inst.dispose()
         return

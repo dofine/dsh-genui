@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
@@ -41,13 +42,15 @@ const required = [
   'lib/assets/mermaid.js', 'lib/assets/three.js',
   // ECharts ships as two bundles: core (common presets) + full (the rest).
   'lib/assets/echarts-core.js', 'lib/assets/echarts-full.js',
+  // The fork's flint assembler ships as its own lazy asset.
+  'lib/assets/flint.js',
   // plugin_check 发布规范（issue #15）：tarball 必须携带可复现构建所需的
   // 源码入口与构建配置，prepack 已在打包前重建 lib。
   'src/index.ts', 'tsconfig.json', 'tsdown.config.ts',
   ...exportTargets,
 ]
 
-const dir = mkdtempSync(join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), '.e2e-artifacts-pack-'))
+const dir = mkdtempSync(join(tmpdir(), 'dsh-genui-pack-'))
 let keepTarball = false
 try {
   const out = execFileSync('npm', ['pack', '--pack-destination', dir, '--json'], {

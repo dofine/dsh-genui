@@ -13,8 +13,9 @@ import css from './GenuiBlock.module.css'
 import { loadBlockState, saveBlockState } from './interaction-store.ts'
 import { recordFence, recordInteraction } from './achievement-store.ts'
 import { renderNode } from './blocks/render-node.tsx'
-import type { AnswersState, GenuiBlockProps, QuestionMeta } from './blocks/state.ts'
+import type { AnswersState, GenuiBlockProps } from './blocks/state.ts'
 import type { GenuiSpec } from './spec.ts'
+import { compileSubmissionRegistry } from './submission-registry.ts'
 
 export const GENUI_ACTION_DEBOUNCE_MS = 300
 
@@ -82,7 +83,7 @@ function specEquivalent(a: GenuiSpec, b: GenuiSpec): boolean {
 
 /** Stateful implementation. Streaming state adopts its first durable key
  * when the reply settles; switching an existing durable key starts fresh. */
-function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialState, onStateChange }: GenuiBlockProps) {
+function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialState, onStateChange, onStateSnapshot }: GenuiBlockProps) {
   const gap = spec.gap ?? 16
   const onAction = useDebouncedAction(useGenuiAction())
   const stateChangeRef = useRef(onStateChange)
@@ -96,7 +97,7 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   const [answers, setAnswers] = useState<Record<string, string>>(persisted?.answers ?? {})
   const [multiAnswers, setMultiAnswers] = useState<Record<string, string[]>>(persisted?.multiAnswers ?? {})
   const [fields, setFields] = useState<Record<string, string>>(persisted?.fields ?? {})
-  const [meta, setMeta] = useState<Record<string, QuestionMeta>>({})
+  const submissionRegistry = useMemo(() => compileSubmissionRegistry(spec), [spec])
   const [locked, setLocked] = useState(persisted?.locked === true)
   const [round, setRound] = useState(0)
   // Secret (password) field ids: their values never persist and never join
@@ -123,7 +124,7 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
     })
   }, [])
   const setField = useCallback((id: string, value: string) => {
-    // Registry presence means "the user has touched this field" — a blank
+    // Field state presence means "the user has touched this field" — a blank
     // value is stored as '' instead of deleting the entry, so a user who
     // CLEARS a model-provided default does not get the default back on the
     // next mount. Blank values are still excluded from submit collection by
@@ -134,14 +135,6 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   const registerSecretField = useCallback((id: string) => {
     setSecretFields(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
   }, [])
-  const registerMeta = useCallback((group: string, m: QuestionMeta) => {
-    setMeta(prev => {
-      const existing = prev[group]
-      if (existing !== undefined && existing.label === m.label && existing.answer === m.answer
-        && existing.explanation === m.explanation) return prev
-      return { ...prev, [group]: m }
-    })
-  }, [])
   const clear = useCallback(() => {
     setAnswers({})
     setMultiAnswers({})
@@ -150,11 +143,23 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   }, [])
   const answersState = useMemo<AnswersState>(
     () => ({
-      answers, multiAnswers, fields, secretFields, meta, locked, round,
-      setAnswer, setMultiAnswer, setField, registerSecretField, registerMeta, clear, setLocked,
+      answers, multiAnswers, fields, secretFields, registry: submissionRegistry, locked, round,
+      setAnswer, setMultiAnswer, setField, registerSecretField, clear, setLocked,
     }),
-    [answers, multiAnswers, fields, secretFields, meta, locked, round, setAnswer, setMultiAnswer, setField, registerSecretField, registerMeta, clear],
+    [answers, multiAnswers, fields, secretFields, submissionRegistry, locked, round, setAnswer, setMultiAnswer, setField, registerSecretField, clear],
   )
+  const durableState = useMemo(() => {
+    const safeFields = Object.fromEntries(Object.entries(fields).filter(([id]) => !secretFields.has(id)))
+    return {
+      answers,
+      ...(Object.keys(multiAnswers).length > 0 ? { multiAnswers } : {}),
+      locked,
+      ...(Object.keys(safeFields).length > 0 ? { fields: safeFields } : {}),
+    }
+  }, [answers, multiAnswers, locked, fields, secretFields])
+  useEffect(() => {
+    onStateSnapshot?.(durableState)
+  }, [durableState, onStateSnapshot])
   // Achievement telemetry: every emitted action counts as one interaction
   // (the debounced emit fires once per real user action).
   const trackedAction = useMemo(() => {
@@ -167,23 +172,14 @@ function GenuiBlockInstance({ spec, stateKey, animateEntrance = true, initialSta
   // Durable save (debounced 300ms — typing in a field fires per keystroke).
   // Secret field values are stripped before writing: passwords never persist.
   useEffect(() => {
-    const safeFields = Object.fromEntries(
-      Object.entries(fields).filter(([id]) => !secretFields.has(id)),
-    )
-    const state = {
-      answers,
-      ...(Object.keys(multiAnswers).length > 0 ? { multiAnswers } : {}),
-      locked,
-      ...(Object.keys(safeFields).length > 0 ? { fields: safeFields } : {}),
-    }
     if (savesExternally) {
-      stateChangeRef.current?.(state)
+      stateChangeRef.current?.(durableState)
       return
     }
     if (stateKey === undefined) return
-    const timer = setTimeout(() => saveBlockState(stateKey, state), 300)
+    const timer = setTimeout(() => saveBlockState(stateKey, durableState), 300)
     return () => clearTimeout(timer)
-  }, [stateKey, answers, multiAnswers, locked, fields, secretFields, savesExternally])
+  }, [stateKey, durableState, savesExternally])
   // Achievement telemetry (0.9.5): the store dedupes by spec fingerprint, so
   // streaming re-renders and replays count once per distinct content.
   useEffect(() => {
@@ -235,4 +231,5 @@ export const GenuiBlock = memo(function GenuiBlock(props: GenuiBlockProps) {
   return <GenuiBlockInstance key={identity.generation} {...props} />
 }, (prev, next) => prev.stateKey === next.stateKey
   && prev.animateEntrance === next.animateEntrance && prev.onStateChange === next.onStateChange
+  && prev.onStateSnapshot === next.onStateSnapshot
   && specEquivalent(prev.spec, next.spec))

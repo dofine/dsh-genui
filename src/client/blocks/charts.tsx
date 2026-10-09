@@ -12,7 +12,7 @@
  */
 import { Fragment, memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react'
-import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { writeClipboard } from '../primitive-adapter.ts'
 import { renderInline } from '../inline.ts'
 // Aliased: `t` is already used throughout this module as a tick-value
 // local (ticks.map(t => …)), so the translator rides a distinct name.
@@ -20,6 +20,7 @@ import { t as tr, useT } from '../i18n/index.ts'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../genui-runtime/index.ts'
 import type { GenuiChart, GenuiTable } from '../spec.ts'
+import { isTableGroupHeaderRow, tableRowsForDetails } from '../table-details.ts'
 
 export const CHART_COLORS = [
   'var(--dsw-static-deepseek-400)',
@@ -83,6 +84,33 @@ function numericColumns(rows: GenuiTable['rows'], nCols: number): boolean[] {
     }
     return any
   })
+}
+
+/**
+ * Does this cell carry real line breaks? Table cells default to `nowrap` (the
+ * data voice), which also collapses the leading whitespace of a pasted code
+ * block — indentation is lost and the snippet no longer runs. Cells that do
+ * contain a line break get `pre-line` (see `.tdMultiline`), so the line
+ * structure survives and the text still copies back as multiple lines.
+ */
+function hasLineBreak(value: string | number): boolean {
+  return typeof value === 'string' && /[\n\r]/.test(value)
+}
+
+/**
+ * Is this cell code rather than prose? Only then is leading indentation
+ * significant (`pre-wrap`), while a prose line break stays `pre-line` so its
+ * surrounding spaces collapse exactly like the rest of the UI.
+ */
+function isCodeCell(value: string | number): boolean {
+  if (typeof value !== 'string') return false
+  return /(^|\n)[ \t]/.test(value) || value.includes('```')
+}
+
+/** The whitespace class a multi-line cell needs, or undefined for single-line. */
+function cellWrapClass(value: string | number): string | undefined {
+  if (!hasLineBreak(value)) return undefined
+  return isCodeCell(value) ? css.tdCode : css.tdMultiline
 }
 
 /** Signed cell text (`+12.4%`, `-3`, `−2.1k`) reads as a delta without any
@@ -206,9 +234,8 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
 }) {
   useT()
   const columns = node.columns.slice(0, GENUI_LIMITS.maxTableCols)
-  const rows = node.rows.slice(0, GENUI_LIMITS.maxTableRows)
+  const rows = tableRowsForDetails<GenuiTable['rows'][number]>(node)
   const types = node.types ?? []
-  const groupMode = types[0] === 'group'
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null)
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set())
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
@@ -227,9 +254,7 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
   // filled and every other cell empty opens a section. Data rows after it are
   // its CHILDREN — indented, counted, and collapsible — so the relationship is
   // unmistakable instead of "one more row at the same level".
-  const isGroupRow = (row: GenuiTable['rows'][number]): boolean =>
-    groupMode && String(row[0] ?? '').trim() !== ''
-    && row.slice(1).every(cell => String(cell ?? '').trim() === '')
+  const isGroupRow = (row: GenuiTable['rows'][number]): boolean => isTableGroupHeaderRow(row, types)
 
   // Local filtering (bound control): the model ships the full data set once and
   // the reader narrows it live — no round trip, no re-generation.
@@ -308,11 +333,17 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
 
   const renderCell = (cell: string | number, j: number, rowIndex: number): ReactNode => {
     const type = types[j]
+    const wrap = cellWrapClass(cell)
     const tone = type === 'delta'
       ? (String(cell).trim().startsWith('-') ? 'down' : 'up')
       : deltaTone(cell)
     return (
-      <td key={j} className={numeric[j] || type === 'num' ? css.tdNum : undefined}>
+      <td
+        key={j}
+        className={[numeric[j] || type === 'num' ? css.tdNum : undefined, wrap]
+          .filter(part => part !== undefined)
+          .join(' ') || undefined}
+      >
         {type === 'badge'
           ? <span className={css.cellBadge}>{renderInline(String(cell), false)}</span>
           : type === 'bar'
@@ -340,7 +371,9 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
             {columns.map((c, i) => (
               <th
                 key={i}
-                className={numeric[i] ? css.thNum : undefined}
+                className={[numeric[i] ? css.thNum : undefined, cellWrapClass(c)]
+                  .filter(part => part !== undefined)
+                  .join(' ') || undefined}
                 aria-sort={sort !== null && sort.col === i ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
               >
                 <button type="button" className={css.thSort} onClick={() => clickHeader(i)}>
@@ -359,7 +392,7 @@ export const TableNode = memo(function TableNode({ node, renderDetail, filterVal
               <Fragment key={section.header === null ? `s-${si}` : `g-${section.header.index}`}>
                 {section.header !== null && (
                   <tr className={css.groupRow}>
-                    <td colSpan={columns.length}>
+                    <td colSpan={columns.length} className={cellWrapClass(String(section.header.row[0]))}>
                       <button
                         type="button"
                         className={css.groupToggle}
@@ -529,6 +562,23 @@ function formatTick(t: number): string {
   return String(Math.round(t * 100) / 100)
 }
 
+/** 计算数字用普通或指数形式表示时所需的小数位数。 */
+export function fractionDigits(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  const [coefficient, exponentText] = String(value).toLowerCase().split('e')
+  const decimalDigits = coefficient!.split('.')[1]?.length ?? 0
+  const exponent = exponentText === undefined ? 0 : Number(exponentText)
+  return Math.max(decimalDigits - exponent, 0)
+}
+
+/** 按参与计算的原始数值精度格式化图表合计。 */
+export function formatChartValue(value: number, maxFractionDigits: number): string {
+  if (!Number.isFinite(value)) return String(value)
+  if (Math.abs(value) >= 1e21 || maxFractionDigits > 100) return String(value)
+  const formatted = value.toFixed(maxFractionDigits)
+  return formatted.includes('.') ? formatted.replace(/\.?0+$/, '') : formatted
+}
+
 /** Shared y-axis gutter: ticks positioned against the same percentage scale
  *  the plot uses, so labels line up with the gridlines. */
 function YAxis({ ticks, lo, span }: { ticks: number[]; lo: number; span: number }) {
@@ -588,11 +638,13 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
   const showValues = labels.length <= 12
   const stacked = chart.stacked === true && isGrouped
   const categoryTotals = labels.map((_l, i) => seriesValues.reduce((sum, values) => sum + Math.max(0, values[i] ?? 0), 0))
+  const categoryFractionDigits = labels.map((_label, i) => Math.max(...seriesValues.map(values => fractionDigits(values[i] ?? 0)), 0))
+  const positiveMax = stacked ? Math.max(...categoryTotals, 0) : Math.max(...flat, 0)
 
   // Horizontal: label column + one track per series. The axis is always
   // 0..max (a horizontal track has no zero line to cross).
   if (chart.horizontal === true) {
-    const scale = Math.max(Math.max(...flat, 0), 1)
+    const scale = Math.max(positiveMax, 1)
     const legend = isGrouped
       ? (
         <div className={css.chartLegend}>
@@ -614,7 +666,7 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
               <div className={css.hbarTracks}>
                 {stacked
                   ? (
-                    <div className={css.hbarTrack} title={`${label}: ${categoryTotals[i] ?? 0}`}>
+                    <div className={css.hbarTrack} title={`${label}: ${formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)}`}>
                       {seriesValues.map((values, si) => {
                         const v = Math.max(0, values[i] ?? 0)
                         const total = categoryTotals[i] ?? 0
@@ -624,8 +676,8 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
                             key={si}
                             className={css.hbarSeg}
                             style={{ width: `${width}%`, background: colors[si] }}
-                            onMouseEnter={event => show(event, [[grouped[si]!.label, String(v)], [tr('block.total'), String(total)]])}
-                            onMouseMove={event => show(event, [[grouped[si]!.label, String(v)], [tr('block.total'), String(total)]])}
+                            onMouseEnter={event => show(event, [[grouped[si]!.label, String(v)], [tr('block.total'), formatChartValue(total, categoryFractionDigits[i] ?? 0)]])}
+                            onMouseMove={event => show(event, [[grouped[si]!.label, String(v)], [tr('block.total'), formatChartValue(total, categoryFractionDigits[i] ?? 0)]])}
                           />
                         )
                       })}
@@ -639,8 +691,8 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
                         <div
                           className={css.hbarFill}
                           style={{ width: `${width}%`, background: colors[si] }}
-                          onMouseEnter={event => show(event, isGrouped ? [[grouped[si]!.label, String(v)], [tr('block.total'), String(categoryTotals[i] ?? 0)]] : [[label, String(v)]])}
-                          onMouseMove={event => show(event, isGrouped ? [[grouped[si]!.label, String(v)], [tr('block.total'), String(categoryTotals[i] ?? 0)]] : [[label, String(v)]])}
+                          onMouseEnter={event => show(event, isGrouped ? [[grouped[si]!.label, String(v)], [tr('block.total'), formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)]] : [[label, String(v)]])}
+                          onMouseMove={event => show(event, isGrouped ? [[grouped[si]!.label, String(v)], [tr('block.total'), formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)]] : [[label, String(v)]])}
                         />
                       </div>
                     )
@@ -648,7 +700,7 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
               </div>
               {showValues && (
                 <span className={css.hbarValue}>
-                  {isGrouped ? categoryTotals[i] ?? 0 : String(data[i]?.value ?? '')}
+                  {isGrouped ? formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0) : String(data[i]?.value ?? '')}
                 </span>
               )}
             </div>
@@ -663,7 +715,7 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
   // Vertical: grouped bars clamp negatives (the flex layout stacks upward), so
   // the axis starts at zero for that shape; single-series bars render against
   // a true zero line and draw negatives downward.
-  const ticks = niceTicks(isGrouped ? 0 : Math.min(...flat, 0), Math.max(...flat, 0), 4)
+  const ticks = niceTicks(isGrouped ? 0 : Math.min(...flat, 0), positiveMax, 4)
   const lo = ticks[0]!
   const hi = ticks[ticks.length - 1]!
   const span = hi - lo || 1
@@ -686,7 +738,7 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
                   <>
                     {showValues && (
                       <span className={css.barValue} style={{ bottom: `calc(${pct(categoryTotals[i] ?? 0)}% + 4px)` }}>
-                        {String(categoryTotals[i] ?? 0)}
+                        {formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)}
                       </span>
                     )}
                     <div className={css.stack} style={{ height: `${Math.max(0, pct(categoryTotals[i] ?? 0))}%` }}>
@@ -696,7 +748,7 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
                         const v = Math.max(0, raw)
                         const total = categoryTotals[i] ?? 0
                         const segHeight = total === 0 ? 0 : (v / total) * pct(total)
-                        const rows: TipRow[] = [[entry.label, String(raw)], [tr('block.total'), String(total)]]
+                        const rows: TipRow[] = [[entry.label, String(raw)], [tr('block.total'), formatChartValue(total, categoryFractionDigits[i] ?? 0)]]
                         return (
                           <div
                             key={si}
@@ -727,8 +779,8 @@ export const BarsNode = memo(function BarsNode({ chart }: { chart: GenuiChart })
                               height: `${Math.max(0, pct(Math.max(0, v)))}%`,
                               background: colors[si],
                             }}
-                            onMouseEnter={event => show(event, [[entry.label, String(datum?.value ?? '')], [tr('block.total'), String(categoryTotals[i] ?? 0)]])}
-                            onMouseMove={event => show(event, [[entry.label, String(datum?.value ?? '')], [tr('block.total'), String(categoryTotals[i] ?? 0)]])}
+                            onMouseEnter={event => show(event, [[entry.label, String(datum?.value ?? '')], [tr('block.total'), formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)]])}
+                            onMouseMove={event => show(event, [[entry.label, String(datum?.value ?? '')], [tr('block.total'), formatChartValue(categoryTotals[i] ?? 0, categoryFractionDigits[i] ?? 0)]])}
                           />
                         </div>
                       )
