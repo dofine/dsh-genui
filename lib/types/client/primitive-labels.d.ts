@@ -6,7 +6,7 @@
  * module load — a language switch must reach a diff or JSON tree that is
  * already on screen.
  */
-import type { DiffBlockLabels, JsonTreeLabels } from '@deepseek-ai/dsh-client-ui-primitives';
+import type { DiffBlockLabels, JsonTreeLabels } from './primitive-adapter.ts';
 /** Chrome labels for an inline GenUI diff block, in the active locale. */
 export declare function diffBlockLabels(): DiffBlockLabels;
 /** Copy labels for a code block rendered inside a GenUI fence or node. */

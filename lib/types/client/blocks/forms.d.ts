@@ -1,15 +1,14 @@
-import type { AnswersState, GenuiBlockProps, QuestionMeta } from './state.ts';
+import type { RadioSubmissionMember } from '../submission-registry.ts';
+import type { AnswersState, GenuiBlockProps } from './state.ts';
 import type { GenuiInput, GenuiRadio, GenuiSelect, GenuiSlider, GenuiSubmit, GenuiSwitch, GenuiTextarea } from '../spec.ts';
 export declare function RadioNode({ node, onAction, answers }: {
     node: GenuiRadio;
     onAction?: GenuiBlockProps['onAction'];
     answers?: AnswersState | undefined;
 }): import("react").JSX.Element;
-/** Resolve a question's correct label from its metadata. */
-export declare function correctLabelOf(m: QuestionMeta): string | undefined;
-/** Submit: collect grouped radio and checkbox answers. Radio-only scopes keep
- * LOCAL-FIRST grading; when checkbox selections participate, the click falls
- * back to the aggregation action so multi-select data is never discarded. */
+/** 根据静态 radio member 获取正确选项的标签。 */
+export declare function correctLabelOf(m: RadioSubmissionMember): string | undefined;
+/** 汇总当前 block 的表单状态，并根据 resolver 的结果提交或本地判卷。 */
 export declare function SubmitNode({ node, onAction, answers }: {
     node: GenuiSubmit;
     onAction?: GenuiBlockProps['onAction'];

@@ -8,8 +8,10 @@
  *
  * The loop is deliberately narrow, matching the contract agreed on the issue:
  * - **默认开启。** 插件配置中的 `fenceFeedback: false` 可以关闭回合转向。
- * - **Bounded.** At most one correction per turn AND at most one per fence
- *   body per process, so a correction that is itself wrong cannot loop.
+ * - **修正上限。** 每个 turn 最多发送两条 correction；render failure 和 delivery reminder 共用上限，
+ *   每个 fence body 在当前回合中最多修正一次，新回合可重新修正。
+ * - **仅含 reasoning 的恢复。** 已验证的 GenUI 回合若只以 reasoning block 结束，使用宿主的
+ *   `EMPTY_RESPONSE` retry policy。
  * - **Never for subagents.** A child session's fence belongs to a parent reply.
  * - **Exact fence matching.** Only an info string of exactly `dsh-ui` opens a
  *   fence, so ` ```dsh-ui-dark `, indented prose, or a mention of the name is
@@ -26,6 +28,13 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { UserMessage } from '@deepseek-ai/dsh-session';
 /** Plugin name recorded on every message this loop steers. */
 export declare const FEEDBACK_PLUGIN_NAME = "dsh-genui-charts";
+/** Source kind persisted by this plugin in Session format v4. */
+export declare const FEEDBACK_SOURCE_KIND: "plugin:dsh-genui-charts";
+/**
+ * 同一个 turn 内 fence-feedback correction 的共享上限。
+ * Render failure 和 nothing-delivered reminder 共用该 budget；各自的 ledger 独立阻止重复修正。
+ */
+export declare const MAX_CORRECTIONS_PER_TURN = 2;
 /** One ```dsh-ui fence found in an assistant reply. */
 export interface ExtractedFence {
     /** Raw body between the fences (no delimiters). */
@@ -74,36 +83,69 @@ export declare function fenceCorrectionText(failures: readonly FenceFailure[]): 
  * copy resolves identically on every host.
  *
  * @param text - the correction text.
+ * @param sessionFormatVersion - the format recorded by the active session.
  * @returns a frozen user message attributed to this plugin as a notice.
  */
-export declare function createFeedbackMessage(text: string): UserMessage;
+export declare function createFeedbackMessage(text: string, sessionFormatVersion: number): UserMessage;
 /** What the pure planner needs to decide whether a correction may be sent. */
 export interface FenceFeedbackPlanInput {
+    /** Latest assistant reply text of the current turn. */
     readonly text: string;
     readonly turn: number;
-    readonly lastCorrectedTurn: number | undefined;
-    readonly corrected: ReadonlySet<string>;
+    /** Fence bodies already corrected for a render failure in the current turn. */
+    readonly correctedSpec: ReadonlySet<string>;
+    /** Turns already given the delivery reminder. */
+    readonly deliveryRemindedTurns?: ReadonlySet<number> | undefined;
+    /** A `validate_dsh_ui` call happened this turn (formal GenUI signal). */
+    readonly validatedThisTurn?: boolean | undefined;
+    /** The turn already delivered a body or a successful `render_ui` result. */
+    readonly deliveredThisTurn?: boolean | undefined;
     readonly aborted: boolean;
+    /** Corrections already steered in this turn (shared hard cap). */
+    readonly correctionsThisTurn?: number | undefined;
+    /** Turn {@link correctionsThisTurn} counts (stale counts are ignored). */
+    readonly correctionsTurn?: number | undefined;
 }
 /** A correction the caller must account for before steering. */
 export interface FenceFeedbackPlan {
     readonly text: string;
     readonly fingerprints: readonly string[];
     readonly turn: number;
+    /**
+     * `render` corrects a fence that failed to resolve; `delivery` reminds the
+     * model that the turn produced nothing formal. They share the per-turn budget
+     * but keep separate ledgers.
+     */
+    readonly kind: 'render' | 'delivery';
 }
 /**
- * Decide whether this turn boundary should steer a fence correction — the pure
- * core of the loop, so every bound (one per turn, one per fence, cancellation)
- * is testable without a host.
+ * Decide whether this turn boundary should steer a correction — the pure core of
+ * the loop, so every bound (per-turn cap, per-fence ledger, cancellation) is
+ * testable without a host.
  *
- * @param input - reply text, turn identity, and the session's accounting.
+ * The decision is driven by FORMAL events only: fences in the reply body, a
+ * `validate_dsh_ui` call, a delivered body text or a successful `render_ui`
+ * result. The reasoning block is
+ * never read here — a draft inside the thinking block is not proof that the model
+ * chose to deliver it, so it must not change any decision.
+ *
+ * @param input - reply text, turn identity, formal signals, and the accounting.
  * @returns the correction to send, or null when the loop must stay silent.
  */
 export declare function planFenceFeedback(input: FenceFeedbackPlanInput): FenceFeedbackPlan | null;
 /**
- * 根据插件配置启用围栏反馈流程。
+ * Correction for a validated GenUI turn that reached the boundary without any
+ * formal delivery.
  *
- * @param ctx - the host context.
- * @param enabled - the plugin config flag; the loop is inert when false.
+ * @param turn - turn that reached the boundary.
+ * @param attempt - correction number within the shared turn budget.
+ * @returns the message text to steer into the running turn.
+ */
+export declare function missingBodyCorrectionText(turn: number, attempt?: number): string;
+/**
+ * 注册 GenUI 回合跟踪、宿主重试判定和可选的围栏修正流程。
+ *
+ * @param ctx - 宿主 Context。
+ * @param enabled - 是否启用同回合围栏修正。
  */
 export declare function installFenceFeedback(ctx: Context, enabled: boolean): void;

@@ -24,6 +24,10 @@ export declare const TableNode: import("react").NamedExoticComponent<{
      *  has to import the renderer back (import cycle). */
     renderDetail?: ((items: NonNullable<GenuiTable["details"]>[number] & object[]) => ReactNode) | undefined;
 }>;
+/** 计算数字用普通或指数形式表示时所需的小数位数。 */
+export declare function fractionDigits(value: number): number;
+/** 按参与计算的原始数值精度格式化图表合计。 */
+export declare function formatChartValue(value: number, maxFractionDigits: number): string;
 /** Chart: bars (default), line (trend), or donut (share); multi-series bars via `series`. */
 export declare const ChartNode: import("react").NamedExoticComponent<{
     chart: GenuiChart;

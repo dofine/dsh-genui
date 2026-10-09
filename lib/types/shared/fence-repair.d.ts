@@ -32,11 +32,10 @@ export declare function describeJsonFailure(raw: string): string | null;
  *    fail near that quote with "Expected ',' or ']'...".
  * 2. Trailing commas before `}` / `]` or at end of input.
  *
- * The state-machine scan walks the raw body tracking string-open state:
- * - inside a string, a quote whose next non-space char is NOT one of `, ] } :`
- *   (or end of input) cannot legally close the string → escape it as `\"`;
- * - a `,` whose next non-space char is `}` / `]` / end of input is a trailing
- *   comma → drop it.
+ * A shared grammar-aware scan distinguishes object keys from values and
+ * checks the continuation after a potential string terminator. Ambiguous
+ * value quotes use bounded backtracking; trailing commas are dropped only
+ * outside strings.
  *
  * Returns `{ text, repairs }` on success, or null when nothing needed fixing
  * or the body still does not parse (callers fall through to tier-2 / banner).
@@ -46,6 +45,18 @@ export declare function repairFenceJson(raw: string): {
     repairs: number;
 } | null;
 /**
+ * 取**第一个平衡根值**的文本（丢弃其后的杂字符）；没有平衡根时返回 null。
+ *
+ * 与 {@link completeFenceJson} 里的前缀回退同源，但**只做裁剪、不做结构补全**：
+ * 内容识别用它来容忍「合法 JSON + 尾部泄漏文本」（真实样本：模型把自己的工具调用
+ * 模板泄漏在 JSON 之后，且围栏没闭合）。根值正好结束在末尾时返回 null —— 那种情况
+ * `JSON.parse` 本来就会成功。
+ *
+ * @param text - 候选正文。
+ * @returns 平衡根前缀；无可裁剪内容时 null。
+ */
+export declare function trimToBalancedRoot(text: string): string | null;
+/**
  * Tier-2 repair — SETTLED MESSAGES ONLY (never while streaming): heals
  * structural incompleteness — missing closing quotes/brackets — by appending
  * the missing terminators, and heals stray closers — a `]` mistyped as `}` or
@@ -54,8 +65,8 @@ export declare function repairFenceJson(raw: string): {
  * client uses the host-provided fence source; the validate tool is by
  * definition pre-emission), so a streaming half can never flash premature UI.
  *
- * ONE unified scan: the tier-1 fixes (quote escaping + trailing-comma drops)
- * are folded into the same pass, so bodies that combine BOTH defect classes
+ * One shared scan implementation folds the tier-1 fixes (quote escaping +
+ * trailing-comma drops) into structural completion, so bodies with BOTH defects
  * (a trailing comma AND a missing closer) heal in one shot — the old
  * two-phase chain lost tier-1's partial work when its whole-body parse
  * failed, and re-scanning the raw text could not compose the repairs.

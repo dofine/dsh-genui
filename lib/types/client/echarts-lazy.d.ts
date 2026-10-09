@@ -1,3 +1,4 @@
+export { CORE_PRESETS } from './echarts-engine.ts';
 /** The ECharts instance surface (the subset the component uses). */
 export interface EChartsInstance {
     setOption: (opt: unknown, notMerge?: boolean) => void;
@@ -15,6 +16,3 @@ export interface EChartsInstance {
 export declare function createChart(el: HTMLElement, option: unknown, opts?: {
     height?: number;
 }, engine?: 'core' | 'full'): Promise<EChartsInstance>;
-/** Presets the core bundle can draw; anything else (or a raw `option`) needs
- *  the full engine. Kept next to the loader so the split stays in one place. */
-export declare const CORE_PRESETS: ReadonlySet<string>;

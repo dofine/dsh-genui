@@ -9,6 +9,12 @@
  * `block.*`, `err.*`.
  */
 export declare const EN: {
+    readonly 'artifact.export': "Export";
+    readonly 'artifact.exportHtml': "HTML";
+    readonly 'artifact.exportJson': "GenUI JSON";
+    readonly 'artifact.exportFailed': "Export failed. Try again.";
+    readonly 'artifact.unsupportedCustom': "Cannot export HTML because the standalone runtime cannot render custom components: {types}. Export GenUI JSON to preserve these nodes.";
+    readonly 'artifact.externalMediaNotice': "External media may not appear when this file is opened offline.";
     readonly 'panel.badge': "Panel";
     readonly 'panel.title.default': "GenUI panel";
     readonly 'panel.title.explore': "GenUI explorer";
